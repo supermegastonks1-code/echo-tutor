@@ -1,0 +1,12 @@
+{
+  "name": "loki-tutor",
+  "version": "1.0.0",
+  "description": "Дерзкий репетитор английского на Gemini Live",
+  "main": "main.js",
+  "scripts": {
+    "start": "electron ."
+  },
+  "devDependencies": {
+    "electron": "^38.0.0"
+  }
+}

@@ -1,0 +1,49 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta http-equiv="Content-Security-Policy"
+        content="default-src 'self'; script-src 'self' blob:; style-src 'self' 'unsafe-inline'; connect-src https://generativelanguage.googleapis.com wss://generativelanguage.googleapis.com; worker-src blob:; media-src blob: mediastream:">
+  <title>Локи — репетитор английского</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <header>
+    <div class="brand">Локи <span id="lesson" class="lesson"></span></div>
+    <div class="controls">
+      <label class="toggle" title="В наушниках можно перебивать Локи голосом">
+        <input type="checkbox" id="headphones"> в наушниках
+      </label>
+      <button id="startBtn" class="primary">Начать занятие</button>
+    </div>
+  </header>
+
+  <main>
+    <section class="stage">
+      <div id="face" class="face"></div>
+      <div id="status" class="status">Нажми «Начать занятие»</div>
+    </section>
+    <section id="log" class="log"></section>
+  </main>
+
+  <footer>
+    <button id="micBtn" class="mic" title="Микрофон" disabled>🎤</button>
+    <input id="textInput" type="text" placeholder="Напиши по-русски или по-английски…" autocomplete="off" disabled>
+    <button id="sendBtn" disabled>Отправить</button>
+  </footer>
+
+  <div id="keyOverlay" class="overlay" hidden>
+    <div class="card">
+      <h2>Нужен ключ Gemini</h2>
+      <ol>
+        <li>Открой <b>aistudio.google.com</b> и войди в Google.</li>
+        <li>Нажми <b>Get API key</b> → <b>Create API key</b>, скопируй его.</li>
+        <li>Открой файл <b>config.json</b> в папке программы и вставь ключ вместо <code>ВСТАВЬ_СЮДА_КЛЮЧ_GEMINI</code>.</li>
+        <li>Сохрани файл и перезапусти программу.</li>
+      </ol>
+    </div>
+  </div>
+
+  <script type="module" src="app.js"></script>
+</body>
+</html>

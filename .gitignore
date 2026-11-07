@@ -1,0 +1,9 @@
+# Ключ Gemini — только локально
+config.json
+
+# Личный прогресс и логи
+data/
+
+node_modules/
+dist/
+*.lnk
