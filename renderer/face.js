@@ -1,94 +1,74 @@
-// Клякс — живая чернильная клякса. Форма считается каждый кадр: дышит, колышется,
-// при злости покрывается колючками и брызгает, при радости прыгает и искрит.
+// 3D-персонаж: белый гранёный блок с глазами-прямоугольниками, ручками и шестью лапками.
+// Построен из гранёных блоков на Three.js и живёт каждый кадр: дышит, моргает,
+// следит за мышкой, говорит, прыгает от радости и пыхтит паром от злости.
 
-const CX = 120, CY = 112, R = 62;
-const INK = '#0d0b26';
+import * as THREE from '../node_modules/three/build/three.module.js';
 
-const PALETTE = {
-  idle: [43, 45, 143],
-  listening: [37, 99, 235],
-  speaking: [236, 72, 98],
-  sassy: [139, 61, 230],
-  angry: [220, 38, 38],
-  happy: [16, 163, 108]
+const WHITE = new THREE.Color('#ffffff');
+
+// Подсветка вокруг персонажа и лёгкий оттенок тела в каждом состоянии.
+const LOOK = {
+  idle: { rim: '#9fb4ff', tint: WHITE },
+  listening: { rim: '#3d7bff', tint: WHITE },
+  speaking: { rim: '#ff4f86', tint: WHITE },
+  sassy: { rim: '#9b5cff', tint: new THREE.Color('#f6f0ff') },
+  angry: { rim: '#ff2a2a', tint: new THREE.Color('#ffc4c4') },
+  happy: { rim: '#1fd28a', tint: new THREE.Color('#f2fff8') }
 };
 
-// Движение тела в каждом состоянии: колыхание, колючки, наклон, растяжение, тряска, прыжки.
-const MOTION = {
-  idle: { wobble: 1, spikes: 0, rot: 0, sy: 1, shake: 0, bounce: 0 },
-  listening: { wobble: 1.3, spikes: 0, rot: 6, sy: 1.05, shake: 0, bounce: 0 },
-  speaking: { wobble: 1.6, spikes: 0, rot: 0, sy: 1, shake: 0, bounce: 0 },
-  sassy: { wobble: 1.1, spikes: 0, rot: -8, sy: 1, shake: 0, bounce: 0 },
-  angry: { wobble: 1.4, spikes: 1, rot: 0, sy: 1.04, shake: 2.2, bounce: 0 },
-  happy: { wobble: 1.2, spikes: 0, rot: 0, sy: 1, shake: 0, bounce: 1 }
-};
+// Восьмиугольное сечение: прямоугольник со срезанными углами (сверху и снизу срез разный).
+function ring(halfW, top, bottom, cutTop, cutBottom, z) {
+  return [
+    [-halfW + cutBottom, bottom], [halfW - cutBottom, bottom], [halfW, bottom + cutBottom], [halfW, top - cutTop],
+    [halfW - cutTop, top], [-halfW + cutTop, top], [-halfW, top - cutTop], [-halfW, bottom + cutBottom]
+  ].map(([x, y]) => new THREE.Vector3(x, y, z));
+}
+
+// Гранёное тело: сечения от передней грани к задней соединяются плоскими гранями.
+function loft(rings) {
+  const pos = [];
+  const tri = (a, b, c) => pos.push(a.x, a.y, a.z, b.x, b.y, b.z, c.x, c.y, c.z);
+  const center = (r) => r.reduce((acc, p) => acc.add(p), new THREE.Vector3()).multiplyScalar(1 / r.length);
+  const first = rings[0], last = rings[rings.length - 1], n = first.length;
+  const cf = center(first), cb = center(last);
+  for (let j = 0; j < n; j++) {
+    const k = (j + 1) % n;
+    tri(cf, first[j], first[k]);
+    tri(cb, last[k], last[j]);
+    for (let i = 0; i < rings.length - 1; i++) {
+      const a = rings[i][j], b = rings[i][k], c = rings[i + 1][k], d = rings[i + 1][j];
+      tri(a, c, b);
+      tri(a, d, c);
+    }
+  }
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+  g.computeVertexNormals();
+  return g;
+}
+
+// Простой гранёный блок с фаской b по всем рёбрам.
+function facetBox(w, h, d, b) {
+  const x = w / 2, y = h / 2, z = d / 2;
+  return loft([
+    ring(x - b, y - b, -y + b, b * 0.6, b * 0.6, z),
+    ring(x, y, -y, b, b, z - b),
+    ring(x, y, -y, b, b, -z + b),
+    ring(x - b, y - b, -y + b, b * 0.6, b * 0.6, -z)
+  ]);
+}
+
+// Корпус по замерам с референса: широкая фаска вокруг лица, сверху крупнее, снизу мельче.
+function torsoGeometry() {
+  return loft([
+    ring(0.75, 0.43, -0.58, 0.1, 0.07, 0.65),
+    ring(0.9, 0.66, -0.66, 0.2, 0.12, 0.43),
+    ring(0.9, 0.66, -0.66, 0.2, 0.12, -0.43),
+    ring(0.75, 0.43, -0.58, 0.1, 0.07, -0.65)
+  ]);
+}
 
 const mix = (a, b, k) => a + (b - a) * k;
-const rgb = (c, k = 0, to = 255) => `rgb(${c.map(v => Math.round(mix(v, to, k))).join(',')})`;
-
-function blobPath(t, wobble, spikes, level) {
-  const n = 64, pts = [];
-  for (let i = 0; i < n; i++) {
-    const a = (i / n) * Math.PI * 2;
-    let r = 1
-      + wobble * (0.045 * Math.sin(3 * a + 1.3 * t) + 0.03 * Math.sin(5 * a - 1.7 * t + 1) + 0.02 * Math.sin(2 * a + 0.7 * t))
-      + level * 0.04 * Math.sin(7 * a + 9 * t)
-      + spikes * 0.17 * Math.pow(Math.max(0, Math.sin(11 * a + 4 * t)), 3);
-    pts.push([CX + Math.cos(a) * R * r, CY + Math.sin(a) * R * r]);
-  }
-  // Сглаживание Catmull-Rom → кривые Безье.
-  let d = `M${pts[0][0].toFixed(1)} ${pts[0][1].toFixed(1)}`;
-  for (let i = 0; i < n; i++) {
-    const p0 = pts[(i - 1 + n) % n], p1 = pts[i], p2 = pts[(i + 1) % n], p3 = pts[(i + 2) % n];
-    const c1 = [p1[0] + (p2[0] - p0[0]) / 6, p1[1] + (p2[1] - p0[1]) / 6];
-    const c2 = [p2[0] - (p3[0] - p1[0]) / 6, p2[1] - (p3[1] - p1[1]) / 6];
-    d += `C${c1[0].toFixed(1)} ${c1[1].toFixed(1)} ${c2[0].toFixed(1)} ${c2[1].toFixed(1)} ${p2[0].toFixed(1)} ${p2[1].toFixed(1)}`;
-  }
-  return d + 'Z';
-}
-
-const EYE = (x, ry = 15, pr = 6.5, id) => `
-  <ellipse cx="${x}" cy="${CY - 8}" rx="13" ry="${ry}" fill="#fff"/>
-  <g id="${id}">
-    <circle cx="${x}" cy="${CY - 6}" r="${pr}" fill="${INK}"/>
-    <circle cx="${x + 2.5}" cy="${CY - 9}" r="2" fill="#fff"/>
-  </g>`;
-
-const LINE = 'stroke="#fff" stroke-width="5" stroke-linecap="round" fill="none"';
-
-function features(mood, gid) {
-  switch (mood) {
-    case 'happy':
-      return {
-        eyes: `<path d="M86 ${CY - 4} Q98 ${CY - 22} 110 ${CY - 4}" ${LINE} stroke-width="6"/>
-               <path d="M130 ${CY - 4} Q142 ${CY - 22} 154 ${CY - 4}" ${LINE} stroke-width="6"/>`,
-        mouth: `<path d="M102 ${CY + 18} Q120 ${CY + 44} 138 ${CY + 18} Z" fill="${INK}" stroke="#fff" stroke-width="4" stroke-linejoin="round"/>`
-      };
-    case 'sassy':
-      return {
-        eyes: `${EYE(98, 15, 6.5, 'pl')}
-               <path d="M84 ${CY - 8} A14 15 0 0 1 112 ${CY - 8} Z" fill="url(#${gid})" stroke="#fff" stroke-width="3"/>
-               ${EYE(142, 15, 6.5, 'pr')}
-               <path d="M128 ${CY - 30} Q142 ${CY - 40} 157 ${CY - 32}" ${LINE}/>`,
-        mouth: `<path d="M108 ${CY + 28} Q124 ${CY + 31} 136 ${CY + 19}" ${LINE}/>`
-      };
-    case 'angry':
-      return {
-        eyes: `${EYE(98, 11, 5, 'pl')}${EYE(142, 11, 5, 'pr')}
-               <path d="M82 ${CY - 30} L111 ${CY - 18}" ${LINE} stroke-width="6"/>
-               <path d="M158 ${CY - 30} L129 ${CY - 18}" ${LINE} stroke-width="6"/>`,
-        mouth: `<rect x="103" y="${CY + 18}" width="34" height="13" rx="3" fill="#fff" stroke="${INK}" stroke-width="2"/>
-                <path d="M103 ${CY + 24.5} H137 M114 ${CY + 18} V${CY + 31} M126 ${CY + 18} V${CY + 31}" stroke="${INK}" stroke-width="1.5"/>`
-      };
-    default:
-      return {
-        eyes: `${EYE(98, 15, 6.5, 'pl')}${EYE(142, 15, 6.5, 'pr')}`,
-        mouth: `<path d="M108 ${CY + 22} Q120 ${CY + 31} 132 ${CY + 22}" ${LINE}/>`
-      };
-  }
-}
-
-let faceCount = 0;
 
 export class Face {
   constructor(el) {
@@ -96,50 +76,152 @@ export class Face {
     this.mood = 'calm';
     this.activity = 'idle';
     this.level = 0;
-    this.color = [...PALETTE.idle];
-    this.motion = { ...MOTION.idle };
-    this.particles = [];
-    this.pop = 0;
-    this.gaze = [0, 0];
-    this.gazeTarget = [0, 0];
-    this.lastMouse = 0;
-    this.nextBlink = 2;
     this.t = 0;
     this.prev = performance.now();
-    this.key = null;
-    this.gid = `kg${++faceCount}`;
+    this.pop = 0;
+    this.nextBlink = 2;
+    this.mouse = new THREE.Vector2(0, 0);
+    this.lastMouse = -10;
+    this.gaze = new THREE.Vector2(0, 0);
+    this.k = { lean: 0, sassy: 0, angry: 0, happy: 0 };
+    this.steam = [];
 
-    el.innerHTML = `
-      <svg viewBox="0 0 240 230" class="face-svg">
-        <defs>
-          <radialGradient id="${this.gid}" cx="38%" cy="32%" r="75%">
-            <stop class="s0" offset="0%"/>
-            <stop class="s1" offset="65%"/>
-            <stop class="s2" offset="100%"/>
-          </radialGradient>
-        </defs>
-        <g id="fx"></g>
-        <g id="body">
-          <path id="drip" fill="url(#${this.gid})"/>
-          <circle id="drop" r="6" fill="url(#${this.gid})"/>
-          <path id="blob" fill="url(#${this.gid})"/>
-          <ellipse cx="${CX - 27}" cy="${CY - 32}" rx="15" ry="8" fill="#fff" opacity=".28" transform="rotate(-32 ${CX - 27} ${CY - 32})"/>
-          <g id="eyes"></g>
-          <g id="mouth"></g>
-          <ellipse id="talk" cx="${CX}" cy="${CY + 26}" rx="12" ry="3" fill="${INK}" stroke="#fff" stroke-width="4"/>
-        </g>
-      </svg>`;
-    this.q = (id) => el.querySelector('#' + id);
-    window.addEventListener('mousemove', (e) => this.look(e));
-    this.render();
+    this.renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true, preserveDrawingBuffer: true });
+    this.renderer.setPixelRatio(Math.min(2, window.devicePixelRatio || 1));
+    this.renderer.shadowMap.enabled = true;
+    this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+    this.renderer.outputColorSpace = THREE.SRGBColorSpace;
+    this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
+    this.renderer.toneMappingExposure = 1.3;
+    el.innerHTML = '';
+    el.appendChild(this.renderer.domElement);
+    this.renderer.domElement.className = 'face-canvas';
+
+    this.scene = new THREE.Scene();
+    this.camera = new THREE.PerspectiveCamera(30, 1, 0.1, 50);
+    this.camera.position.set(0, 1.0, 5.3);
+    this.camera.lookAt(0, 0.72, 0);
+
+    this.buildLights();
+    this.buildModel();
+
+    const resize = () => {
+      const w = el.clientWidth || 300, h = el.clientHeight || 250;
+      this.renderer.setSize(w, h, false);
+      this.camera.aspect = w / h;
+      this.camera.updateProjectionMatrix();
+    };
+    new ResizeObserver(resize).observe(el);
+    resize();
+
+    window.addEventListener('mousemove', (e) => {
+      const box = el.getBoundingClientRect();
+      this.mouse.set(
+        THREE.MathUtils.clamp((e.clientX - (box.left + box.width / 2)) / 400, -1, 1),
+        THREE.MathUtils.clamp((e.clientY - (box.top + box.height / 2)) / 300, -1, 1)
+      );
+      this.lastMouse = this.t;
+    });
+
     requestAnimationFrame(() => this.frame());
   }
 
+  buildLights() {
+    this.scene.add(new THREE.HemisphereLight('#ffffff', '#c9d2e3', 1.7));
+    const key = new THREE.DirectionalLight('#ffffff', 2.6);
+    key.position.set(-2.5, 4.5, 5);
+    key.castShadow = true;
+    key.shadow.mapSize.set(1024, 1024);
+    key.shadow.radius = 6;
+    Object.assign(key.shadow.camera, { left: -2, right: 2, top: 2, bottom: -2, near: 1, far: 15 });
+    this.scene.add(key);
+    const fill = new THREE.DirectionalLight('#dfe8ff', 0.6);
+    fill.position.set(4, 2, 3);
+    this.scene.add(fill);
+    // Цветная контровая подсветка — по ней видно настроение.
+    this.rim = new THREE.PointLight(LOOK.idle.rim, 6, 8, 1.5);
+    this.rim.position.set(0, 1.4, -1.6);
+    this.scene.add(this.rim);
+    this.rimSide = new THREE.PointLight(LOOK.idle.rim, 2.5, 6, 1.5);
+    this.rimSide.position.set(2.2, 0.6, 0.8);
+    this.scene.add(this.rimSide);
+
+    const ground = new THREE.Mesh(new THREE.PlaneGeometry(8, 8), new THREE.ShadowMaterial({ opacity: 0.16 }));
+    ground.rotation.x = -Math.PI / 2;
+    ground.receiveShadow = true;
+    this.scene.add(ground);
+  }
+
+  buildModel() {
+    this.bodyMat = new THREE.MeshPhysicalMaterial({
+      color: WHITE.clone(), roughness: 0.45, metalness: 0, clearcoat: 0.45, clearcoatRoughness: 0.25, sheen: 0.3, sheenColor: new THREE.Color('#dfe8ff')
+    });
+    const ink = new THREE.MeshStandardMaterial({ color: '#141622', roughness: 0.35 });
+    const mesh = (geo, mat = this.bodyMat) => {
+      const m = new THREE.Mesh(geo, mat);
+      m.castShadow = true;
+      m.receiveShadow = true;
+      return m;
+    };
+
+    this.root = new THREE.Group();
+    this.scene.add(this.root);
+
+    // Шесть лапок: две спереди, две по бокам, две сзади.
+    const legGeo = facetBox(0.35, 0.46, 0.34, 0.04);
+    const legSpots = [[-0.4, 0.36], [0.4, 0.36], [-0.68, 0.02], [0.68, 0.02], [-0.4, -0.36], [0.4, -0.36]];
+    this.legs = legSpots.map(([x, z]) => {
+      const leg = mesh(legGeo);
+      leg.position.set(x, 0.23, z);
+      this.root.add(leg);
+      return leg;
+    });
+
+    // Тело на пружинке: вся анимация корпуса — через этот узел.
+    this.body = new THREE.Group();
+    this.body.position.y = 0.38;
+    this.root.add(this.body);
+    const torso = mesh(torsoGeometry());
+    torso.position.y = 0.66;
+    this.body.add(torso);
+
+    // Лицо на передней грани.
+    this.face = new THREE.Group();
+    this.face.position.set(0, 0.66, 0.65);
+    this.body.add(this.face);
+    const eyeGeo = new THREE.BoxGeometry(0.15, 0.27, 0.04);
+    this.eyes = [-0.43, 0.43].map((x) => {
+      const eye = mesh(eyeGeo, ink);
+      eye.position.set(x, 0.01, 0.012);
+      this.face.add(eye);
+      return eye;
+    });
+    this.mouth = mesh(new THREE.BoxGeometry(0.27, 0.05, 0.03), ink);
+    this.mouth.position.set(-0.01, -0.27, 0.012);
+    this.face.add(this.mouth);
+
+    // Ручки на шарнирах у плеч, чтобы ими можно было махать.
+    const armGeo = facetBox(0.38, 0.46, 0.48, 0.09);
+    this.arms = [-1, 1].map((side) => {
+      const pivot = new THREE.Group();
+      pivot.position.set(side * 0.84, 0.42, 0.2);
+      const arm = mesh(armGeo);
+      arm.position.set(side * 0.17, -0.1, 0);
+      pivot.add(arm);
+      this.body.add(pivot);
+      return pivot;
+    });
+
+    // Пар для злости.
+    this.steamMat = new THREE.MeshStandardMaterial({ color: '#ffffff', transparent: true, opacity: 0.8, roughness: 1 });
+    this.steamGeo = new THREE.SphereGeometry(0.08, 12, 10);
+  }
+
   set({ mood, activity }) {
+    if (mood && mood !== this.mood) this.pop = 1;
     if (mood) this.mood = mood;
     if (activity) this.activity = activity;
     if (this.activity !== 'speaking') this.level = 0;
-    this.render();
   }
 
   speak(level) { this.level = level; }
@@ -149,132 +231,111 @@ export class Face {
     return this.activity;
   }
 
-  render() {
-    const key = this.mood + '|' + this.activity;
-    if (key === this.key) return;
-    if (this.key && this.key.split('|')[0] !== this.mood) this.pop = 1;
-    this.key = key;
-    const f = features(this.mood, this.gid);
-    this.q('eyes').innerHTML = f.eyes;
-    this.q('mouth').innerHTML = f.mouth;
-  }
-
-  // Зрачки следят за мышкой, а без неё — блуждают сами.
-  look(e) {
-    const box = this.el.getBoundingClientRect();
-    const dx = e.clientX - (box.left + box.width / 2), dy = e.clientY - (box.top + box.height / 2);
-    const len = Math.hypot(dx, dy) || 1;
-    const k = Math.min(1, len / 300);
-    this.gazeTarget = [dx / len * 4 * k, dy / len * 4 * k];
-    this.lastMouse = this.t;
-  }
-
-  spawn(state, dt) {
-    const c = this.color;
-    if (state === 'angry' && Math.random() < dt * 9) {
-      const a = Math.random() * Math.PI * 2, s = 70 + Math.random() * 60;
-      this.particles.push({ kind: 'drop', x: CX + Math.cos(a) * R, y: CY + Math.sin(a) * R, vx: Math.cos(a) * s, vy: Math.sin(a) * s - 40, life: 0, max: 0.8, r: 2 + Math.random() * 4 });
-    }
-    if (state === 'happy' && Math.random() < dt * 4) {
-      const a = Math.random() * Math.PI * 2;
-      this.particles.push({ kind: 'spark', x: CX + Math.cos(a) * (R + 18), y: CY + Math.sin(a) * (R + 18), vx: 0, vy: -10, life: 0, max: 0.9, r: 5 + Math.random() * 4 });
-    }
-    if (state === 'listening' && Math.random() < dt * 1.6) {
-      this.particles.push({ kind: 'ring', x: CX, y: CY, vx: 0, vy: 0, life: 0, max: 1.2, r: R });
-    }
-    this.particles = this.particles.filter(p => (p.life += dt) < p.max);
-    let out = '';
-    for (const p of this.particles) {
-      const k = p.life / p.max;
-      p.x += p.vx * dt; p.y += p.vy * dt;
-      if (p.kind === 'drop') {
-        p.vy += 260 * dt;
-        out += `<circle cx="${p.x.toFixed(1)}" cy="${p.y.toFixed(1)}" r="${(p.r * (1 - k * 0.5)).toFixed(1)}" fill="${rgb(c)}" opacity="${(1 - k).toFixed(2)}"/>`;
-      } else if (p.kind === 'spark') {
-        const s = p.r * Math.sin(k * Math.PI);
-        out += `<path d="M${p.x} ${p.y - s} L${p.x + s * 0.3} ${p.y - s * 0.3} L${p.x + s} ${p.y} L${p.x + s * 0.3} ${p.y + s * 0.3} L${p.x} ${p.y + s} L${p.x - s * 0.3} ${p.y + s * 0.3} L${p.x - s} ${p.y} L${p.x - s * 0.3} ${p.y - s * 0.3}Z" fill="#ffd23f"/>`;
-      } else {
-        out += `<circle cx="${CX}" cy="${CY}" r="${(R + k * 45).toFixed(1)}" fill="none" stroke="${rgb(c)}" stroke-width="3" opacity="${(0.5 * (1 - k)).toFixed(2)}"/>`;
-      }
-    }
-    this.q('fx').innerHTML = out;
-  }
-
   frame() {
     const now = performance.now();
     const dt = Math.min(0.05, (now - this.prev) / 1000);
     this.prev = now;
     this.t += dt;
-    const t = this.t;
-    const state = this.state();
+    const t = this.t, k = this.k, state = this.state();
+    const ease = 1 - Math.exp(-dt * 7);
+    const go = (name, target) => { k[name] = mix(k[name], target, ease); };
 
-    // Плавный переход цвета и движения.
-    const target = PALETTE[state];
-    const ease = 1 - Math.exp(-dt * 6);
-    this.color = this.color.map((v, i) => mix(v, target[i], ease));
-    const m = MOTION[state];
-    for (const k in m) this.motion[k] = mix(this.motion[k], m[k], ease);
-    const mo = this.motion;
+    go('lean', state === 'listening' ? 1 : 0);
+    go('sassy', state === 'sassy' ? 1 : 0);
+    go('angry', state === 'angry' ? 1 : 0);
+    go('happy', state === 'happy' ? 1 : 0);
+    this.pop *= Math.exp(-dt * 5);
 
-    const c = this.color;
-    this.el.querySelector('.s0').setAttribute('stop-color', rgb(c, 0.3));
-    this.el.querySelector('.s1').setAttribute('stop-color', rgb(c));
-    this.el.querySelector('.s2').setAttribute('stop-color', rgb(c, 0.3, 0));
-    this.el.querySelector('svg').style.filter = `drop-shadow(0 10px 20px ${rgb(c).replace('rgb', 'rgba').replace(')', ',0.4)')})`;
+    // Цвет подсветки и оттенок тела.
+    const look = LOOK[state];
+    this.rim.color.lerp(new THREE.Color(look.rim), ease);
+    this.rimSide.color.copy(this.rim.color);
+    this.rim.intensity = 5 + (state === 'idle' ? 0 : 3) + Math.sin(t * 3) * 0.8;
+    this.bodyMat.color.lerp(look.tint, ease);
+    this.el.style.setProperty('--glow', `#${this.rim.color.getHexString()}`);
 
-    this.q('blob').setAttribute('d', blobPath(t, mo.wobble, mo.spikes, this.level));
+    // Взгляд и поворот за мышкой; без мышки — оглядывается сам.
+    if (t - this.lastMouse > 3 && Math.random() < dt * 0.5) {
+      this.mouse.set((Math.random() - 0.5) * 1.2, (Math.random() - 0.5) * 0.6);
+    }
+    this.gaze.lerp(this.mouse, 1 - Math.exp(-dt * 6));
 
-    // Капля снизу медленно набухает и срывается.
-    const ph = (t % 5) / 5;
-    const grow = Math.min(1, ph / 0.7);
-    const fall = Math.max(0, (ph - 0.7) / 0.3);
-    const dx = CX - 24, top = CY + R * 0.82;
-    const len = 6 + grow * 16;
-    this.q('drip').setAttribute('d', `M${dx - 5} ${top} Q${dx - 3} ${top + len * 0.6} ${dx} ${top + len} Q${dx + 3} ${top + len * 0.6} ${dx + 5} ${top} Z`);
-    const drop = this.q('drop');
-    drop.setAttribute('cx', dx);
-    drop.setAttribute('cy', (top + len + fall * fall * 60).toFixed(1));
-    drop.setAttribute('r', (3 + grow * 3).toFixed(1));
-    drop.setAttribute('opacity', (1 - fall).toFixed(2));
+    // Корпус: дыхание, наклон при слушании, поворот при ехидстве, прыжки от радости, тряска от злости.
+    const breathe = Math.sin(t * 2.2) * 0.02;
+    const hop = k.happy * Math.abs(Math.sin(t * 6)) * 0.35;
+    const talkBob = this.level * 0.06 * Math.abs(Math.sin(t * 14));
+    const shake = k.angry * 0.025;
+    const pop = 1 + 0.12 * this.pop * Math.cos(t * 28);
+    this.root.position.set((Math.random() - 0.5) * shake * 2, hop, 0);
+    this.root.rotation.y = this.gaze.x * 0.35 + k.sassy * 0.45 + Math.sin(t * 0.7) * 0.05;
+    this.body.rotation.x = k.lean * 0.12 + this.gaze.y * 0.08;
+    this.body.rotation.z = k.lean * 0.08 + k.sassy * -0.06 + Math.sin(t * 1.3) * 0.015;
+    const squash = k.happy * (0.06 - Math.abs(Math.sin(t * 6)) * 0.1);
+    this.body.scale.set(pop * (1 + squash * 0.5), pop * (1 + breathe - squash + talkBob), pop * (1 + squash * 0.5));
+    this.body.position.y = 0.38 + talkBob * 0.4;
+    for (const [i, leg] of this.legs.entries()) leg.scale.y = 1 - k.happy * 0.12 * Math.abs(Math.sin(t * 6 + i));
 
-    // Тело: дыхание, наклон, речь, тряска, прыжки, «поп» при смене настроения.
-    this.pop *= Math.exp(-dt * 6);
-    const breathe = 1 + 0.018 * Math.sin(t * 2.2);
-    const hop = mo.bounce * Math.abs(Math.sin(t * 5));
-    const pop = 1 + 0.14 * this.pop * Math.cos(t * 30);
-    const sx = breathe * pop * (1 + 0.05 * this.level + mo.bounce * 0.06 * (1 - hop));
-    const sy = breathe * pop * mo.sy * (1 - 0.04 * this.level - mo.bounce * 0.05 * (1 - hop));
-    const ox = (Math.random() - 0.5) * 2 * mo.shake;
-    const oy = (Math.random() - 0.5) * 2 * mo.shake - hop * 12;
-    this.q('body').setAttribute('transform',
-      `translate(${(CX + ox).toFixed(1)} ${(CY + oy).toFixed(1)}) rotate(${mo.rot.toFixed(1)}) scale(${sx.toFixed(3)} ${sy.toFixed(3)}) translate(${-CX} ${-CY})`);
+    // Ручки: висят, при речи жестикулируют, от радости машут, от злости сжаты и трясутся.
+    this.arms.forEach((arm, i) => {
+      const side = i === 0 ? -1 : 1;
+      const wave = k.happy * (0.9 + Math.sin(t * 12 + i) * 0.4);
+      const talk = this.level * 0.5 * Math.sin(t * 9 + i * 2);
+      const mad = k.angry * (0.25 + Math.sin(t * 40 + i) * 0.08);
+      arm.rotation.z = side * (wave + talk * 0.6 + mad) + Math.sin(t * 2 + i) * 0.04;
+      arm.rotation.x = -k.lean * 0.2;
+    });
 
     // Моргание.
     let blink = 1;
     if (t > this.nextBlink) {
-      const b = (t - this.nextBlink) / 0.14;
-      blink = b < 1 ? Math.abs(1 - 2 * b) * 0.9 + 0.1 : 1;
+      const b = (t - this.nextBlink) / 0.15;
+      blink = b < 1 ? Math.max(0.08, Math.abs(1 - 2 * b)) : 1;
       if (b >= 1) this.nextBlink = t + 2.5 + Math.random() * 3;
     }
-    this.q('eyes').setAttribute('transform', `translate(0 ${CY - 8}) scale(1 ${blink.toFixed(2)}) translate(0 ${-(CY - 8)})`);
 
-    // Взгляд.
-    if (t - this.lastMouse > 3 && Math.random() < dt * 0.6) {
-      this.gazeTarget = [(Math.random() - 0.5) * 7, (Math.random() - 0.5) * 5];
-    }
-    this.gaze = this.gaze.map((v, i) => mix(v, this.gazeTarget[i], 1 - Math.exp(-dt * 9)));
-    for (const id of ['pl', 'pr']) {
-      this.q(id)?.setAttribute('transform', `translate(${this.gaze[0].toFixed(1)} ${this.gaze[1].toFixed(1)})`);
-    }
+    // Глаза: смотрят за мышкой, щурятся от радости, косятся при ехидстве, злобно наклоняются.
+    this.eyes.forEach((eye, i) => {
+      const side = i === 0 ? -1 : 1;
+      eye.position.x = side * 0.43 + this.gaze.x * 0.07;
+      eye.position.y = 0.01 - this.gaze.y * 0.05 + k.lean * 0.03;
+      const sy = blink * (1 - k.happy * 0.6) * (1 - k.sassy * (i === 0 ? 0.6 : -0.1)) * (1 - k.angry * 0.25);
+      eye.scale.set(1 + k.lean * 0.15, Math.max(0.06, sy) * (1 + k.lean * 0.12), 1);
+      eye.rotation.z = side * -k.angry * 0.55;
+    });
 
-    // Рот: во время речи открывается в такт голосу.
-    const talking = this.activity === 'speaking' && this.mood !== 'happy';
-    this.q('mouth').style.display = talking ? 'none' : '';
-    const talk = this.q('talk');
-    talk.style.display = talking ? '' : 'none';
-    if (talking) talk.setAttribute('ry', (3 + this.level * 12).toFixed(1));
+    // Рот: открывается в такт голосу, ухмыляется при ехидстве, шире от радости.
+    const open = this.activity === 'speaking' ? this.level : 0;
+    this.mouth.scale.set(1 + k.happy * 0.8 + k.angry * 0.4, 1 + open * 5 + k.angry * 0.8, 1);
+    this.mouth.position.x = -0.01 + k.sassy * 0.08;
+    this.mouth.rotation.z = k.sassy * 0.25;
 
-    this.spawn(state, dt);
+    this.updateSteam(dt, k.angry > 0.5);
+    this.renderer.render(this.scene, this.camera);
     requestAnimationFrame(() => this.frame());
+  }
+
+  updateSteam(dt, active) {
+    if (active && Math.random() < dt * 10) {
+      const puff = new THREE.Mesh(this.steamGeo, this.steamMat.clone());
+      puff.position.set((Math.random() - 0.5) * 1.4, 1.7 + this.root.position.y, (Math.random() - 0.5) * 0.6);
+      puff.userData = { life: 0, max: 1 + Math.random() * 0.5, vx: (Math.random() - 0.5) * 0.3 };
+      this.scene.add(puff);
+      this.steam.push(puff);
+    }
+    this.steam = this.steam.filter((p) => {
+      const d = p.userData;
+      d.life += dt;
+      const k = d.life / d.max;
+      p.position.y += dt * 0.9;
+      p.position.x += d.vx * dt;
+      p.scale.setScalar(0.6 + k * 1.8);
+      p.material.opacity = 0.75 * (1 - k);
+      if (k >= 1) {
+        this.scene.remove(p);
+        p.material.dispose();
+        return false;
+      }
+      return true;
+    });
   }
 }

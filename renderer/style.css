@@ -70,7 +70,7 @@ main {
   height: 250px;
 
 }
-.face-svg {
+.face-canvas, .face-svg {
   width: 100%;
   height: 100%;
   overflow: visible;
@@ -184,3 +184,5 @@ button.icon { font-size: 17px; padding: 6px 11px; }
   .styles { grid-template-columns: 1fr; }
   .controls .toggle { display: none; }
 }
+
+.face-canvas { display: block; filter: drop-shadow(0 0 18px color-mix(in srgb, var(--glow, #9fb4ff) 45%, transparent)); }
