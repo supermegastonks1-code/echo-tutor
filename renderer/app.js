@@ -52,7 +52,7 @@ function addUnique(list, items) {
   }
 }
 
-// Конец разговора сохраняем сами, чтобы на следующем занятии Клякс продолжил с того же места.
+// Конец разговора сохраняем сами, чтобы на следующем занятии Echo продолжил с того же места.
 let turnText = { me: '', tutor: '' };
 
 function saveTurn() {
@@ -107,7 +107,7 @@ function handleTool(name, args) {
 
 function onMicChunk(b64, rms) {
   if (!session || !micOn) return;
-  // Без наушников Клякс услышит сам себя из колонок — пока он говорит, микрофон молчит.
+  // Без наушников Echo услышит сам себя из колонок — пока он говорит, микрофон молчит.
   if (!$('headphones').checked && player.busy()) return;
   if (rms > 0.02) lastVoiceAt = performance.now();
   session.sendAudio(b64);
@@ -253,7 +253,7 @@ $('settingsForm').addEventListener('submit', async (e) => {
   const apiKey = $('keyInput').value.trim();
   const style = document.querySelector('input[name="style"]:checked')?.value || 'sassy';
   const error = (text) => { $('settingsError').textContent = text; $('settingsError').hidden = false; };
-  if (!apiKey) return error('Вставь ключ Gemini — без него Клякс не заговорит.');
+  if (!apiKey) return error('Вставь ключ Gemini — без него Echo не заговорит.');
   $('settingsSave').disabled = true;
   $('settingsSave').textContent = 'Проверяю ключ…';
   try {

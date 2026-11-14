@@ -5,8 +5,21 @@ const path = require('path');
 const fs = require('fs');
 
 const ROOT = __dirname;
-// В собранной программе настройки и прогресс лежат в профиле пользователя (%APPDATA%/Klyaks),
+// В собранной программе настройки и прогресс лежат в профиле пользователя (%APPDATA%/Echo),
 // чтобы переживать обновления. При разработке — в папке проекта.
+// Раньше программа называлась Klyaks — переносим старые ключ и прогресс в новую папку.
+if (app.isPackaged) {
+  const oldDir = path.join(app.getPath('appData'), 'Klyaks');
+  const newDir = app.getPath('userData');
+  try {
+    if (fs.existsSync(path.join(oldDir, 'config.json')) && !fs.existsSync(path.join(newDir, 'config.json'))) {
+      fs.mkdirSync(path.join(newDir, 'data'), { recursive: true });
+      fs.copyFileSync(path.join(oldDir, 'config.json'), path.join(newDir, 'config.json'));
+      const oldProgress = path.join(oldDir, 'data', 'progress.json');
+      if (fs.existsSync(oldProgress)) fs.copyFileSync(oldProgress, path.join(newDir, 'data', 'progress.json'));
+    }
+  } catch (e) { /* не получилось — начнём с чистого листа */ }
+}
 const DATA_ROOT = app.isPackaged ? app.getPath('userData') : ROOT;
 const CONFIG_PATH = path.join(DATA_ROOT, 'config.json');
 const PROGRESS_PATH = path.join(DATA_ROOT, 'data', 'progress.json');
@@ -92,7 +105,7 @@ function createWindow() {
     height: 760,
     minWidth: 520,
     minHeight: 560,
-    title: 'Клякс — репетитор английского',
+    title: 'Echo — репетитор английского',
     backgroundColor: '#f6f6f4',
     autoHideMenuBar: true,
     webPreferences: {

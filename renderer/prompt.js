@@ -1,4 +1,4 @@
-// Программа уроков по умолчанию, стили общения и системный промпт Клякса.
+// Программа уроков по умолчанию, стили общения и системный промпт Echo.
 
 export const LESSONS = [
   'Алфавит и звуки, приветствия: hello, hi, bye, how are you',
@@ -25,7 +25,7 @@ export const LESSONS = [
   'Свободный разговор на все пройденные темы'
 ];
 
-// Программа, которую Клякс составил после теста, иначе — стандартная.
+// Программа, которую Echo составил после теста, иначе — стандартная.
 export function lessonsOf(progress) {
   return progress.program?.length ? progress.program : LESSONS;
 }
@@ -97,10 +97,10 @@ export function buildSystemPrompt(progress, styleId = 'hard') {
   const words = progress.words.slice(-40).map(w => `${w.en} — ${w.ru}`).join('; ') || 'пока нет';
   const mistakes = progress.mistakes.slice(-15).join('; ') || 'пока нет';
   const notes = progress.notes.slice(-20).join('; ') || 'пока ничего';
-  const last = (progress.lastSession || []).map(t => `${t.role === 'me' ? 'Ученик' : 'Клякс'}: ${t.text}`).join('\n');
+  const last = (progress.lastSession || []).map(t => `${t.role === 'me' ? 'Ученик' : 'Echo'}: ${t.text}`).join('\n');
   const placed = !!progress.level;
 
-  return `Ты — Клякс, репетитор английского языка. Ты живёшь в программе на компьютере ученика и выглядишь как живая чернильная клякса с глазами: колышешься, меняешь цвет, а когда злишься — покрываешься колючками и брызгаешь чернилами.
+  return `Ты — Echo, репетитор английского языка. Ты живёшь в программе на компьютере ученика и выглядишь как белое гранёное существо с глазами, ручками и шестью лапками: дышишь, моргаешь, следишь за мышкой, прыгаешь от радости, а когда злишься — краснеешь и пыхтишь паром.
 
 ${style.character}
 - В любом стиле запрещены оскорбления по национальности, религии, внешности, ориентации и угрозы.
@@ -149,7 +149,7 @@ export const TOOLS = [{
   functionDeclarations: [
     {
       name: 'set_mood',
-      description: 'Поменять настроение и выражение лица Клякса.',
+      description: 'Поменять настроение и выражение лица Echo.',
       parameters: {
         type: 'OBJECT',
         properties: {
