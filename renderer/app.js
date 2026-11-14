@@ -1,7 +1,7 @@
 import { Face } from './face.js';
 import { Mic, Player } from './audio.js';
 import { LiveSession, pickModel } from './live.js';
-import { TOOLS, buildSystemPrompt, lessonsOf } from './prompt.js';
+import { STYLES, TOOLS, buildSystemPrompt, lessonsOf } from './prompt.js';
 
 const $ = (id) => document.getElementById(id);
 const face = new Face($('face'));
@@ -12,8 +12,8 @@ let micOn = true;
 let lastVoiceAt = 0;
 let greeted = false;
 
-window.addEventListener('error', (e) => window.loki.log(`ошибка JS: ${e.message} @ ${e.filename}:${e.lineno}`));
-window.addEventListener('unhandledrejection', (e) => window.loki.log(`ошибка JS (promise): ${e.reason?.message || e.reason}`));
+window.addEventListener('error', (e) => window.klyaks.log(`ошибка JS: ${e.message} @ ${e.filename}:${e.lineno}`));
+window.addEventListener('unhandledrejection', (e) => window.klyaks.log(`ошибка JS (promise): ${e.reason?.message || e.reason}`));
 let current = { tutor: null, me: null };
 
 function setStatus(text) { $('status').textContent = text; }
@@ -43,7 +43,7 @@ function appendTo(role, text) {
   $('log').scrollTop = $('log').scrollHeight;
 }
 
-function save() { window.loki.saveProgress(progress); }
+function save() { window.klyaks.saveProgress(progress); }
 
 function addUnique(list, items) {
   for (const item of items) {
@@ -52,7 +52,7 @@ function addUnique(list, items) {
   }
 }
 
-// Конец разговора сохраняем сами, чтобы на следующем занятии Локи продолжил с того же места.
+// Конец разговора сохраняем сами, чтобы на следующем занятии Клякс продолжил с того же места.
 let turnText = { me: '', tutor: '' };
 
 function saveTurn() {
@@ -107,7 +107,7 @@ function handleTool(name, args) {
 
 function onMicChunk(b64, rms) {
   if (!session || !micOn) return;
-  // Без наушников Локи услышит сам себя из колонок — пока он говорит, микрофон молчит.
+  // Без наушников Клякс услышит сам себя из колонок — пока он говорит, микрофон молчит.
   if (!$('headphones').checked && player.busy()) return;
   if (rms > 0.02) lastVoiceAt = performance.now();
   session.sendAudio(b64);
@@ -132,6 +132,7 @@ function setRunning(running) {
 }
 
 async function start() {
+  if (!hasKey()) return openSettings();
   $('startBtn').disabled = true;
   try {
     setStatus('Ищу модель Gemini…');
@@ -139,7 +140,7 @@ async function start() {
 
     player = new Player();
     greeted = false;
-    window.loki.log(`--- занятие, модель ${model}`);
+    window.klyaks.log(`--- занятие, модель ${model}`);
     progress.sessions += 1;
     save();
 
@@ -147,11 +148,11 @@ async function start() {
       apiKey: config.apiKey,
       model,
       voice: config.voice || 'Puck',
-      systemPrompt: buildSystemPrompt(progress),
+      systemPrompt: buildSystemPrompt(progress, config.style),
       tools: TOOLS,
       handlers: {
         onStatus: (state, info) => {
-          window.loki.log(`статус: ${state} ${info ?? ''}`);
+          window.klyaks.log(`статус: ${state} ${info ?? ''}`);
           if (state === 'ready') {
             setStatus(micOn ? 'Говори или пиши' : 'Микрофон выключен — пиши');
             // Новая сессия без продолжения: первый раз здороваемся, потом просто продолжаем.
@@ -164,11 +165,11 @@ async function start() {
             setStatus('VPN отвалился — жду, когда вернётся…');
           } else if (state === 'failed') {
             setStatus('Не удалось подключиться');
-            addMsg('system', `Ошибка Gemini: ${info}. Подробности в data/log.txt`);
+            addMsg('system', `Ошибка Gemini: ${info}. Подробности в log.txt`);
             stop();
           }
         },
-        onLog: (line) => window.loki.log(line),
+        onLog: (line) => window.klyaks.log(line),
         onAudio: (b64) => player.play(b64),
         onInterrupted: () => player.stop(),
         onTutorText: (t) => { current.me = null; appendTo('tutor', t); turnText.tutor += t; },
@@ -228,18 +229,59 @@ $('micBtn').onclick = () => {
   setStatus(micOn ? 'Говори или пиши' : 'Микрофон выключен — пиши');
 };
 
+// ---- Настройки: ключ, стиль общения, голос ----
+
+const hasKey = () => !!config.apiKey && !config.apiKey.startsWith('ВСТАВЬ');
+
+function openSettings() {
+  $('keyInput').value = hasKey() ? config.apiKey : '';
+  $('voiceSelect').value = config.voice || 'Puck';
+  const current = config.style || 'sassy';
+  $('styles').innerHTML = Object.entries(STYLES).map(([id, s]) => `
+    <label class="style-card">
+      <input type="radio" name="style" value="${id}" ${id === current ? 'checked' : ''}>
+      <b>${s.title}</b><small>${s.hint}</small>
+    </label>`).join('');
+  $('settingsError').hidden = true;
+  $('settingsCancel').hidden = !hasKey() || !config.style;
+  $('settings').hidden = false;
+  if (!hasKey()) $('keyInput').focus();
+}
+
+$('settingsForm').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const apiKey = $('keyInput').value.trim();
+  const style = document.querySelector('input[name="style"]:checked')?.value || 'sassy';
+  const error = (text) => { $('settingsError').textContent = text; $('settingsError').hidden = false; };
+  if (!apiKey) return error('Вставь ключ Gemini — без него Клякс не заговорит.');
+  $('settingsSave').disabled = true;
+  $('settingsSave').textContent = 'Проверяю ключ…';
+  try {
+    if (apiKey !== config.apiKey) await pickModel(apiKey);
+    config = await window.klyaks.saveConfig({ apiKey, style, voice: $('voiceSelect').value });
+    $('settings').hidden = true;
+    $('startBtn').disabled = false;
+    if (session) addMsg('system', 'Настройки сохранены — подействуют со следующего занятия.');
+  } catch (err) {
+    error(err.message);
+  } finally {
+    $('settingsSave').disabled = false;
+    $('settingsSave').textContent = 'Сохранить';
+  }
+});
+$('settingsCancel').onclick = () => { $('settings').hidden = true; };
+$('settingsBtn').onclick = openSettings;
+$('keyLink').onclick = (e) => { e.preventDefault(); window.klyaks.openKeyPage(); };
+
 (async () => {
-  config = await window.loki.getConfig();
-  progress = await window.loki.getProgress();
+  config = await window.klyaks.getConfig();
+  progress = await window.klyaks.getProgress();
   for (const key of ['mistakes', 'notes']) {
     const clean = [];
     addUnique(clean, progress[key]);
     progress[key] = clean;
   }
   showLesson();
-  if (!config.apiKey || config.apiKey.startsWith('ВСТАВЬ')) {
-    $('keyOverlay').hidden = false;
-    $('startBtn').disabled = true;
-  }
+  if (!hasKey() || !config.style) openSettings();
   requestAnimationFrame(loop);
 })();

@@ -1,18 +1,20 @@
-const { app, BrowserWindow, ipcMain, session, crashReporter } = require('electron');
+const { app, BrowserWindow, ipcMain, session, crashReporter, shell } = require('electron');
 
 crashReporter.start({ uploadToServer: false });
 const path = require('path');
 const fs = require('fs');
 
 const ROOT = __dirname;
-// В собранной программе config.json и прогресс лежат рядом с Локи.exe.
-const DATA_ROOT = app.isPackaged ? path.dirname(process.execPath) : ROOT;
+// В собранной программе настройки и прогресс лежат в профиле пользователя (%APPDATA%/Klyaks),
+// чтобы переживать обновления. При разработке — в папке проекта.
+const DATA_ROOT = app.isPackaged ? app.getPath('userData') : ROOT;
 const CONFIG_PATH = path.join(DATA_ROOT, 'config.json');
 const PROGRESS_PATH = path.join(DATA_ROOT, 'data', 'progress.json');
 
 const DEFAULT_CONFIG = {
-  apiKey: 'ВСТАВЬ_СЮДА_КЛЮЧ_GEMINI',
+  apiKey: '',
   voice: 'Puck',
+  style: '',
   model: ''
 };
 
@@ -41,9 +43,28 @@ function writeJson(file, data) {
   fs.writeFileSync(file, JSON.stringify(data, null, 2), 'utf8');
 }
 
-if (!fs.existsSync(CONFIG_PATH)) writeJson(CONFIG_PATH, DEFAULT_CONFIG);
+// Старые сборки хранили config.json и data/ рядом с .exe — переносим их один раз.
+if (app.isPackaged) {
+  const old = path.dirname(process.execPath);
+  for (const rel of ['config.json', path.join('data', 'progress.json')]) {
+    const from = path.join(old, rel), to = path.join(DATA_ROOT, rel);
+    if (fs.existsSync(from) && !fs.existsSync(to)) {
+      fs.mkdirSync(path.dirname(to), { recursive: true });
+      fs.copyFileSync(from, to);
+    }
+  }
+}
 
 ipcMain.handle('config:get', () => readJson(CONFIG_PATH, DEFAULT_CONFIG));
+ipcMain.handle('config:save', (_e, patch) => {
+  const config = readJson(CONFIG_PATH, DEFAULT_CONFIG);
+  for (const key of ['apiKey', 'voice', 'style']) {
+    if (typeof patch?.[key] === 'string') config[key] = patch[key].trim();
+  }
+  writeJson(CONFIG_PATH, config);
+  return config;
+});
+ipcMain.on('open-key-page', () => shell.openExternal('https://aistudio.google.com/apikey'));
 ipcMain.handle('progress:get', () => readJson(PROGRESS_PATH, DEFAULT_PROGRESS));
 ipcMain.handle('progress:save', (_e, data) => {
   writeJson(PROGRESS_PATH, data);
@@ -71,7 +92,7 @@ function createWindow() {
     height: 760,
     minWidth: 520,
     minHeight: 560,
-    title: 'Локи — репетитор английского',
+    title: 'Клякс — репетитор английского',
     backgroundColor: '#f6f6f4',
     autoHideMenuBar: true,
     webPreferences: {

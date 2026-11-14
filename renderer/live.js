@@ -9,7 +9,7 @@ export async function pickModel(apiKey) {
   if (!res.ok) {
     const text = await res.text();
     if (/location is not supported/i.test(text)) throw new Error('Google не пускает из твоего региона — включи VPN и нажми «Начать занятие» ещё раз.');
-    throw new Error(res.status === 400 || res.status === 403 ? 'Ключ Gemini не подошёл. Проверь config.json.' : `Gemini: ${res.status} ${text}`);
+    throw new Error(res.status === 400 || res.status === 403 ? 'Ключ Gemini не подошёл — проверь, что скопировал его целиком.' : `Gemini: ${res.status} ${text}`);
   }
   const { models = [] } = await res.json();
   const live = models.filter(m => (m.supportedGenerationMethods || []).includes('bidiGenerateContent')
@@ -50,6 +50,13 @@ export class LiveSession {
         this.handlers.onLog?.('сбрасываю ключ продолжения');
         this.resumeHandle = null;
       }
+      // Модель не принимает настройку «раздумий» — сразу пробуем без неё.
+      if (!wasReady && !this.noThinkingConfig && /thinking/i.test(e.reason)) {
+        this.noThinkingConfig = true;
+        this.failures = 0;
+        setTimeout(() => this.connect(), 100);
+        return;
+      }
       // Google не пускает из региона — обычно это моргнул VPN. Ждём, пока он вернётся.
       if (/location is not supported/i.test(e.reason)) {
         this.handlers.onStatus?.('location', reason);
@@ -72,8 +79,8 @@ export class LiveSession {
       generationConfig: {
         responseModalities: ['AUDIO'],
         speechConfig: { voiceConfig: { prebuiltVoiceConfig: { voiceName: this.voice } } },
-        // Без «раздумий» модель отвечает примерно вдвое быстрее.
-        thinkingConfig: { thinkingBudget: 0 }
+        // Без «раздумий» модель отвечает примерно вдвое быстрее (если модель это поддерживает).
+        ...(this.noThinkingConfig ? {} : { thinkingConfig: { thinkingBudget: 0 } })
       },
       // Быстрее понимать, что ученик договорил.
       realtimeInputConfig: {
