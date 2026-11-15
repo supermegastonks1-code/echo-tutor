@@ -222,8 +222,6 @@ button.update[hidden] { display: none; }
 .style-card small { color: var(--muted); font-size: 12px; line-height: 1.35; }
 .style-card:has(input:checked) { border-color: var(--accent); background: var(--me); }
 
-.lesson { cursor: pointer; }
-.lesson:hover { color: var(--accent); }
 
 .program {
   width: 100%;

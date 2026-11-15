@@ -387,7 +387,7 @@ $('themeBtn').onclick = async () => {
   applyTheme(next);
   config = await window.klyaks.saveConfig({ theme: next });
 };
-$('lesson').onclick = $('programBtn').onclick = () => { renderProgram(); $('program').hidden = false; };
+$('programBtn').onclick = () => { renderProgram(); $('program').hidden = false; };
 $('programClose').onclick = () => { $('program').hidden = true; };
 $('program').addEventListener('click', (e) => { if (e.target === $('program')) $('program').hidden = true; });
 $('keyLink').onclick = (e) => { e.preventDefault(); window.klyaks.openKeyPage(); };
