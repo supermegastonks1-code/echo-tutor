@@ -5,15 +5,23 @@
 import * as THREE from '../node_modules/three/build/three.module.js';
 
 const WHITE = new THREE.Color('#ffffff');
+const GRAPHITE = new THREE.Color('#2b2e3d');
 
 // Подсветка вокруг персонажа и лёгкий оттенок тела в каждом состоянии.
+// tint — белый Echo (для тёмной темы), tintDark — тёмный Echo (для светлой темы).
 const LOOK = {
-  idle: { rim: '#9fb4ff', tint: WHITE },
-  listening: { rim: '#3d7bff', tint: WHITE },
-  speaking: { rim: '#ff4f86', tint: WHITE },
-  sassy: { rim: '#9b5cff', tint: new THREE.Color('#f6f0ff') },
-  angry: { rim: '#ff2a2a', tint: new THREE.Color('#ffc4c4') },
-  happy: { rim: '#1fd28a', tint: new THREE.Color('#f2fff8') }
+  idle: { rim: '#9fb4ff', tint: WHITE, tintDark: GRAPHITE },
+  listening: { rim: '#3d7bff', tint: WHITE, tintDark: GRAPHITE },
+  speaking: { rim: '#ff4f86', tint: WHITE, tintDark: GRAPHITE },
+  sassy: { rim: '#9b5cff', tint: new THREE.Color('#f6f0ff'), tintDark: new THREE.Color('#342c4a') },
+  angry: { rim: '#ff2a2a', tint: new THREE.Color('#ffc4c4'), tintDark: new THREE.Color('#4a2329') },
+  happy: { rim: '#1fd28a', tint: new THREE.Color('#f2fff8'), tintDark: new THREE.Color('#223a33') }
+};
+
+// Цвета, которые зависят от темы: тело, глаза с ртом и пар.
+const SKIN = {
+  dark: { body: WHITE, ink: '#141622', inkGlow: '#000000', sheen: '#dfe8ff', steam: '#ffffff' },
+  light: { body: GRAPHITE, ink: '#f3f5ff', inkGlow: '#9fb4ff', sheen: '#5a6488', steam: '#8a90a8' }
 };
 
 // Восьмиугольное сечение: прямоугольник со срезанными углами (сверху и снизу срез разный).
@@ -85,6 +93,7 @@ export class Face {
     this.gaze = new THREE.Vector2(0, 0);
     this.k = { lean: 0, sassy: 0, angry: 0, happy: 0 };
     this.steam = [];
+    this.theme = 'dark';
 
     this.renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true, preserveDrawingBuffer: true });
     this.renderer.setPixelRatio(Math.min(2, window.devicePixelRatio || 1));
@@ -156,7 +165,7 @@ export class Face {
     this.bodyMat = new THREE.MeshPhysicalMaterial({
       color: WHITE.clone(), roughness: 0.45, metalness: 0, clearcoat: 0.45, clearcoatRoughness: 0.25, sheen: 0.3, sheenColor: new THREE.Color('#dfe8ff')
     });
-    const ink = new THREE.MeshStandardMaterial({ color: '#141622', roughness: 0.35 });
+    const ink = this.inkMat = new THREE.MeshStandardMaterial({ color: '#141622', roughness: 0.35 });
     const mesh = (geo, mat = this.bodyMat) => {
       const m = new THREE.Mesh(geo, mat);
       m.castShadow = true;
@@ -226,6 +235,18 @@ export class Face {
 
   speak(level) { this.level = level; }
 
+  // 'dark' — белый Echo для тёмного фона, 'light' — тёмный Echo для светлого.
+  setTheme(theme) {
+    this.theme = theme === 'light' ? 'light' : 'dark';
+    const skin = SKIN[this.theme];
+    this.bodyMat.color.copy(skin.body);
+    this.bodyMat.sheenColor.set(skin.sheen);
+    this.inkMat.color.set(skin.ink);
+    this.inkMat.emissive.set(skin.inkGlow);
+    this.inkMat.emissiveIntensity = this.theme === 'light' ? 0.35 : 0;
+    this.steamMat.color.set(skin.steam);
+  }
+
   state() {
     if (this.mood === 'angry' || this.mood === 'sassy' || this.mood === 'happy') return this.mood;
     return this.activity;
@@ -251,7 +272,7 @@ export class Face {
     this.rim.color.lerp(new THREE.Color(look.rim), ease);
     this.rimSide.color.copy(this.rim.color);
     this.rim.intensity = 5 + (state === 'idle' ? 0 : 3) + Math.sin(t * 3) * 0.8;
-    this.bodyMat.color.lerp(look.tint, ease);
+    this.bodyMat.color.lerp(this.theme === 'light' ? look.tintDark : look.tint, ease);
     this.el.style.setProperty('--glow', `#${this.rim.color.getHexString()}`);
 
     // Взгляд и поворот за мышкой; без мышки — оглядывается сам.

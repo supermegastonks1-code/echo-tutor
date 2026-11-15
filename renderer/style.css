@@ -7,6 +7,22 @@
   --accent: #2f6bff;
   --tutor: #fff1f1;
   --me: #eef3ff;
+  --mic-off: #ffe9e9;
+  color-scheme: light;
+}
+
+/* Тёмная тема: в ней живёт белый Echo. */
+:root[data-theme="dark"] {
+  --bg: #15161d;
+  --panel: #1e2029;
+  --ink: #e9eaf2;
+  --muted: #8e91a5;
+  --line: #2d303d;
+  --accent: #4d7fff;
+  --tutor: #35232a;
+  --me: #1e2a46;
+  --mic-off: #4a2226;
+  color-scheme: dark;
 }
 
 * { box-sizing: border-box; }
@@ -110,11 +126,13 @@ footer input {
   padding: 9px 12px;
   border: 1px solid var(--line);
   border-radius: 10px;
+  background: var(--panel);
+  color: var(--ink);
   outline: none;
 }
 footer input:focus { border-color: var(--accent); }
 .mic { font-size: 18px; padding: 6px 12px; }
-.mic.off { background: #ffe9e9; text-decoration: line-through; }
+.mic.off { background: var(--mic-off); text-decoration: line-through; }
 
 .overlay {
   position: fixed;

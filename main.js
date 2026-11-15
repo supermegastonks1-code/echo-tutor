@@ -28,7 +28,8 @@ const DEFAULT_CONFIG = {
   apiKey: '',
   voice: 'Puck',
   style: '',
-  model: ''
+  model: '',
+  theme: ''
 };
 
 const DEFAULT_PROGRESS = {
@@ -71,7 +72,7 @@ if (app.isPackaged) {
 ipcMain.handle('config:get', () => readJson(CONFIG_PATH, DEFAULT_CONFIG));
 ipcMain.handle('config:save', (_e, patch) => {
   const config = readJson(CONFIG_PATH, DEFAULT_CONFIG);
-  for (const key of ['apiKey', 'voice', 'style']) {
+  for (const key of ['apiKey', 'voice', 'style', 'theme']) {
     if (typeof patch?.[key] === 'string') config[key] = patch[key].trim();
   }
   writeJson(CONFIG_PATH, config);

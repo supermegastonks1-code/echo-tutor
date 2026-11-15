@@ -6,6 +6,17 @@ import { STYLES, TOOLS, buildSystemPrompt, lessonsOf } from './prompt.js';
 const $ = (id) => document.getElementById(id);
 const face = new Face($('face'));
 
+// Тема: тёмная — белый Echo, светлая — тёмный Echo. Без выбора — как в Windows.
+function applyTheme(theme) {
+  const t = theme === 'light' || theme === 'dark' ? theme : (matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+  document.documentElement.dataset.theme = t;
+  face.setTheme(t);
+  $('themeBtn').textContent = t === 'dark' ? '☀' : '🌙';
+  $('themeBtn').title = t === 'dark' ? 'Светлая тема' : 'Тёмная тема';
+  return t;
+}
+applyTheme('');
+
 let config, progress;
 let session = null, mic = null, player = null;
 let micOn = true;
@@ -271,10 +282,16 @@ $('settingsForm').addEventListener('submit', async (e) => {
 });
 $('settingsCancel').onclick = () => { $('settings').hidden = true; };
 $('settingsBtn').onclick = openSettings;
+$('themeBtn').onclick = async () => {
+  const next = document.documentElement.dataset.theme === 'dark' ? 'light' : 'dark';
+  applyTheme(next);
+  config = await window.klyaks.saveConfig({ theme: next });
+};
 $('keyLink').onclick = (e) => { e.preventDefault(); window.klyaks.openKeyPage(); };
 
 (async () => {
   config = await window.klyaks.getConfig();
+  applyTheme(config.theme);
   progress = await window.klyaks.getProgress();
   for (const key of ['mistakes', 'notes']) {
     const clean = [];
