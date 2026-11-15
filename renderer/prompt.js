@@ -1,34 +1,22 @@
 // Программа уроков по умолчанию, стили общения и системный промпт Echo.
 
-export const LESSONS = [
-  'Алфавит и звуки, приветствия: hello, hi, bye, how are you',
-  'Представиться: my name is, I am, I am from, nice to meet you',
-  'Числа 1–20, возраст: how old are you',
-  'Глагол to be: I am / you are / he is, вопросы и отрицания',
-  'Семья: mother, father, brother, sister, have got',
-  'Цвета и предметы вокруг: this is / that is, a / an',
-  'Еда и напитки: I like / I don\'t like, want',
-  'Present Simple: I play, he plays, do / does',
-  'Распорядок дня и время: get up, at 7 o\'clock',
-  'Дом и комнаты: there is / there are',
-  'Числа 20–100, цены: how much is it',
-  'Одежда и погода: it is cold, wear',
-  'Can / can\'t: умения и просьбы',
-  'Present Continuous: I am doing сейчас',
-  'Хобби и свободное время: in my free time',
-  'Город и направления: where is, turn left, go straight',
-  'Past Simple с to be: was / were',
-  'Past Simple правильные глаголы: played, watched',
-  'Past Simple неправильные глаголы: went, saw, ate',
-  'Будущее: going to и will',
-  'Сравнения: bigger, the biggest',
-  'Свободный разговор на все пройденные темы'
-];
+import { COURSE, LEVELS, lessonById, firstLessonOf, REVIEW_STEPS } from './course.js';
 
-// Программа, которую Echo составил после теста, иначе — стандартная.
-export function lessonsOf(progress) {
-  return progress.program?.length ? progress.program : LESSONS;
+// Текущий урок ученика из курса.
+export function currentLesson(progress) {
+  return lessonById(progress.lessonId) || firstLessonOf(progress.level);
 }
+
+// Слова, которые пора повторить на этом занятии.
+export function dueWords(progress, limit = 12) {
+  const now = progress.sessions;
+  return progress.words
+    .filter(w => (w.due ?? 0) <= now)
+    .sort((a, b) => (a.box ?? 0) - (b.box ?? 0) || (a.due ?? 0) - (b.due ?? 0))
+    .slice(0, limit);
+}
+
+export { REVIEW_STEPS };
 
 // Стили общения, которые ученик выбирает в настройках.
 export const STYLES = {
@@ -86,14 +74,32 @@ function placement(style) {
 - Смешивай: перевод слов и фраз с русского, перевод с английского на слух, грамматика (to be, Present Simple, Past Simple, Present Perfect, условные), ответить по-английски на вопрос о себе, рассказать пару предложений.
 - Если ученик плывёт на простом — не мучай сложным. Если щёлкает — сразу повышай.
 - На каждый ответ — короткий комментарий в своём стиле, без объяснений, идём дальше.
-- В конце вызови set_program: уровень по CEFR, короткий вывод и программу из 12–20 уроков именно под его дыры (каждый урок — одна строка: тема + что конкретно учим).
-- Потом ${style.verdict} и начинай урок 1 из программы.`;
+- В конце вызови set_program: уровень (A1, A2, B1, B2 или C1), короткий вывод, start_lesson — с какого урока курса начать (обычно первый урок уровня, но если ученик уже уверенно знает первые темы — ставь дальше) и focus — 2–5 слабых мест, которые надо подтягивать по ходу.
+- Потом ${style.verdict} и начинай этот урок.
+
+КУРС (id — тема)
+${COURSE.map(l => `${l.id} ${l.title}`).join('; ')}`;
 }
+
+// Как проходит каждый урок курса.
+const LESSON_FLOW = `
+КАК ПРОХОДИТ УРОК (по шагам, коротко и бодро)
+1. Домашка: если есть домашнее задание — сначала проверь его. Исправь ошибки и вызови homework_checked.
+2. Повтор слов: спроси слова из списка «Пора повторить» (по одному, с русского на английский и наоборот, можно в предложениях). Потом вызови review_words: какие вспомнил, какие забыл.
+3. Новое: коротко объясни тему текущего урока с простыми примерами, лучше из жизни ученика. Дай 5–10 новых слов по теме и сохрани их через remember.
+4. Практика: упражнения от простого к сложному, потом живой разговор на тему урока, где ученик должен использовать новое.
+5. Проверка: 5 коротких заданий по теме урока без подсказок. 4–5 верно — урок сдан. Меньше — разбери ошибки, ещё немного практики и новая проверка.
+6. Когда сдал — дай короткую домашку (3–5 минут: придумать предложения, выучить слова, рассказать о чём-то) и вызови lesson_done с баллом и домашкой. Потом сразу следующий урок, если ученик хочет продолжать.
+- Урок может растянуться на несколько занятий — это нормально, продолжай с того шага, где остановились.
+- Слабые места ученика (focus) и его частые ошибки вплетай в упражнения любого урока.
+- Если ученик просит пропустить тему, потому что её знает, — дай ему проверку; сдал — lesson_done.`;
 
 export function buildSystemPrompt(progress, styleId = 'hard') {
   const style = STYLES[styleId] || STYLES.hard;
-  const lessons = lessonsOf(progress);
-  const lesson = lessons[Math.min(progress.lessonIndex, lessons.length - 1)];
+  const lesson = currentLesson(progress);
+  const idx = COURSE.indexOf(lesson);
+  const next = COURSE.slice(idx + 1, idx + 3).map(l => `${l.id} ${l.title}`).join('; ') || 'курс закончен';
+  const due = dueWords(progress).map(w => `${w.en} — ${w.ru}`).join('; ') || 'ничего';
   const words = progress.words.slice(-40).map(w => `${w.en} — ${w.ru}`).join('; ') || 'пока нет';
   const mistakes = progress.mistakes.slice(-15).join('; ') || 'пока нет';
   const notes = progress.notes.slice(-20).join('; ') || 'пока ничего';
@@ -137,19 +143,22 @@ ${style.character}
   - каждую ошибку ученика — mistakes;
   - любой факт об ученике (имя, возраст, работа, учёба, хобби, планы) — note. Используй эти факты в примерах.
 - Никогда не говори «ты мне не говорил», если не уверен — посмотри в «Об ученике» и «Конец прошлого занятия».
-- Один урок — примерно одно занятие. Когда тема отработана и ученик справляется — вызови lesson_done и переходи к следующей.
-- Если ученик попросит заново оценить уровень или поменять программу — проведи тест снова и вызови set_program.
+- Если ученик попросит заново оценить уровень или начать с другого места — проведи тест снова и вызови set_program.
+${placed ? LESSON_FLOW : ''}
 
 ПРОГРЕСС УЧЕНИКА
 - Занятие №${progress.sessions + 1}
-${placed ? `- Уровень: ${progress.level}${progress.levelSummary ? ` (${progress.levelSummary})` : ''}
-- Программа: ${lessons.map((l, i) => `${i + 1}. ${l}`).join(' | ')}
-- Текущий урок (${progress.lessonIndex + 1} из ${lessons.length}): ${lesson}` : '- Уровень: НЕ ОЦЕНЁН'}
+${placed ? `- Уровень: ${progress.level} (${LEVELS[progress.level] || ''})${progress.levelSummary ? ` — ${progress.levelSummary}` : ''}
+- Текущий урок ${lesson.id} (${idx + 1} из ${COURSE.length} в курсе): ${lesson.title} — ${lesson.goal}
+- Дальше: ${next}
+- Слабые места: ${(progress.focus || []).join('; ') || 'не указаны'}
+- Домашка с прошлого раза: ${progress.homework || 'нет'}
+- Пора повторить слова: ${due}` : '- Уровень: НЕ ОЦЕНЁН'}
 - Уже знает слова: ${words}
 - Частые ошибки: ${mistakes}
 - Об ученике: ${notes}
 ${last ? `\nКОНЕЦ ПРОШЛОГО ЗАНЯТИЯ (продолжай с этого места)\n${last}\n` : ''}${placed ? '' : placement(style)}
-Если увидишь сообщение «[начало занятия]» — ${style.greet} и сразу ${placed ? 'начинай текущий урок (с быстрого повтора прошлого)' : 'скажи, что сначала проверишь уровень, и задай первый вопрос теста'}.`;
+Если увидишь сообщение «[начало занятия]» — ${style.greet} и сразу ${placed ? 'начинай урок по шагам (домашка, повтор слов, дальше по теме)' : 'скажи, что сначала проверишь уровень, и задай первый вопрос теста'}.`;
 }
 
 export const TOOLS = [{
@@ -186,21 +195,48 @@ export const TOOLS = [{
     },
     {
       name: 'set_program',
-      description: 'Сохранить результат теста уровня и личную программу уроков.',
+      description: 'Сохранить результат теста уровня и место в курсе, с которого начинаем.',
       parameters: {
         type: 'OBJECT',
         properties: {
-          level: { type: 'STRING', description: 'Уровень по CEFR, например A1, A2, B1' },
+          level: { type: 'STRING', enum: ['A1', 'A2', 'B1', 'B2', 'C1'] },
           summary: { type: 'STRING', description: 'Коротко: что знает, где дыры' },
-          lessons: { type: 'ARRAY', items: { type: 'STRING' }, description: '12–20 уроков, каждый — тема и что учим' }
+          start_lesson: { type: 'STRING', description: 'id урока из курса, например A2-05' },
+          focus: { type: 'ARRAY', items: { type: 'STRING' }, description: '2–5 слабых мест ученика' }
         },
-        required: ['level', 'lessons']
+        required: ['level', 'start_lesson']
       }
     },
     {
       name: 'lesson_done',
-      description: 'Отметить текущий урок пройденным и перейти к следующему.',
-      parameters: { type: 'OBJECT', properties: {} }
+      description: 'Урок сдан на проверке: сохранить балл и домашку, перейти к следующему уроку.',
+      parameters: {
+        type: 'OBJECT',
+        properties: {
+          score: { type: 'INTEGER', description: 'Сколько из 5 заданий проверки верно' },
+          homework: { type: 'STRING', description: 'Короткое домашнее задание к следующему занятию' }
+        },
+        required: ['score']
+      }
+    },
+    {
+      name: 'review_words',
+      description: 'Итог повтора слов: какие ученик вспомнил, а какие забыл.',
+      parameters: {
+        type: 'OBJECT',
+        properties: {
+          known: { type: 'ARRAY', items: { type: 'STRING' }, description: 'Английские слова, которые вспомнил' },
+          forgot: { type: 'ARRAY', items: { type: 'STRING' }, description: 'Английские слова, которые забыл' }
+        }
+      }
+    },
+    {
+      name: 'homework_checked',
+      description: 'Домашка проверена — убрать её из списка.',
+      parameters: {
+        type: 'OBJECT',
+        properties: { result: { type: 'STRING', description: 'Коротко: как справился' } }
+      }
     }
   ]
 }];
