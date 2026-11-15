@@ -234,11 +234,13 @@ button.update[hidden] { display: none; }
 .program h2 { margin: 0; }
 .program-summary { margin: 0; font-size: 14px; }
 .program-homework { margin: 0; padding: 8px 12px; border-radius: 10px; background: var(--me); font-size: 14px; }
+.program-hint { margin: 0; font-size: 12px; color: var(--muted); }
 .program-list { overflow-y: auto; min-height: 0; flex: 1; }
 .program-list details { border-top: 1px solid var(--line); padding: 6px 0; }
 .program-list summary { cursor: pointer; font-weight: 600; padding: 4px 0; }
 .program-list ol { list-style: none; margin: 4px 0 6px; padding: 0; }
-.program-list li { margin: 0; padding: 3px 6px; border-radius: 8px; font-size: 14px; }
+.program-list li { margin: 0; padding: 3px 6px; border-radius: 8px; font-size: 14px; cursor: pointer; }
+.program-list li:hover { background: var(--me); color: var(--accent); }
 .program-list li small { color: var(--muted); }
 .program-list .mark { display: inline-block; width: 18px; color: var(--muted); }
 .program-list li.now { background: var(--me); font-weight: 600; }

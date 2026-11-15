@@ -83,7 +83,7 @@ function renderProgram() {
       const state = l === cur ? 'now' : rec ? 'done' : i < curIdx ? 'skip' : '';
       const mark = { now: '▶', done: '✓', skip: '·' }[state] || '';
       const score = rec?.score != null ? ` <small>${rec.score}/5</small>` : '';
-      return `<li class="${state}" title="${escapeHtml(l.goal)}"><span class="mark">${mark}</span>${l.n}. ${escapeHtml(l.title)}${score}</li>`;
+      return `<li class="${state}" data-id="${l.id}" title="${escapeHtml(l.goal)} — нажми, чтобы учить"><span class="mark">${mark}</span>${l.n}. ${escapeHtml(l.title)}${score}</li>`;
     }).join('');
     const open = cur ? cur.level === level : level === 'A1';
     return `<details ${open ? 'open' : ''}><summary>${level} — ${LEVELS[level]}</summary><ol>${items}</ol></details>`;
@@ -389,6 +389,24 @@ $('themeBtn').onclick = async () => {
 };
 $('programBtn').onclick = () => { renderProgram(); $('program').hidden = false; };
 $('programClose').onclick = () => { $('program').hidden = true; };
+
+// Ученик сам выбирает, что учить: клик по уроку делает его текущим.
+$('programList').addEventListener('click', (e) => {
+  const lesson = lessonById(e.target.closest('li[data-id]')?.dataset.id);
+  if (!lesson) return;
+  const wasPlaced = !!progress.level;
+  progress.lessonId = lesson.id;
+  progress.level = lesson.level;
+  save();
+  showLesson();
+  $('program').hidden = true;
+  addMsg('system', `Выбран урок «${lesson.title}» (${lesson.level}).`);
+  if (session) {
+    current = { tutor: null, me: null };
+    player?.stop();
+    session.sendText(`[ученик сам выбрал урок ${lesson.id}: ${lesson.title} — ${lesson.goal}. ${wasPlaced ? '' : 'Тест уровня не нужен. '}Коротко подтверди и переходи к этому уроку по шагам]`);
+  }
+});
 $('program').addEventListener('click', (e) => { if (e.target === $('program')) $('program').hidden = true; });
 $('keyLink').onclick = (e) => { e.preventDefault(); window.klyaks.openKeyPage(); };
 
