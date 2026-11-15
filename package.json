@@ -1,12 +1,12 @@
 {
   "name": "echo-tutor",
   "productName": "Echo",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "description": "Echo — голосовой репетитор английского на Gemini Live",
   "main": "main.js",
   "scripts": {
     "start": "electron .",
-    "dist": "electron-packager . Echo --platform=win32 --arch=x64 --out=dist --overwrite --asar --icon=build/icon.ico --ignore=^/config.json$ --ignore=^/data --ignore=^/dist --ignore=^/build --ignore=^/docs --ignore=[.]lnk$"
+    "dist": "electron-packager . Echo --platform=win32 --arch=x64 --out=dist --overwrite --asar --icon=build/icon.ico \"--ignore=^/config\\.json$\" \"--ignore=^/data\" \"--ignore=^/dist\" \"--ignore=^/build/\" \"--ignore=^/docs\" \"--ignore=\\.lnk$\" \"--ignore=^/CLAUDE\" \"--ignore=^/\\.git\" \"--ignore=^/\\.claude\""
   },
   "devDependencies": {
     "@electron/packager": "^18.0.0",
