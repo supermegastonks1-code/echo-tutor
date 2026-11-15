@@ -1,7 +1,7 @@
 {
   "name": "echo-tutor",
   "productName": "Echo",
-  "version": "1.3.1",
+  "version": "1.3.2",
   "description": "Echo — голосовой репетитор английского на Gemini Live",
   "main": "main.js",
   "scripts": {
