@@ -9,11 +9,12 @@
 </head>
 <body>
   <header>
-    <div class="brand">Echo <span id="lesson" class="lesson"></span></div>
+    <div class="brand">Echo <span id="lesson" class="lesson" title="Открыть программу"></span></div>
     <div class="controls">
       <label class="toggle" title="В наушниках можно перебивать Echo голосом">
         <input type="checkbox" id="headphones"> в наушниках
       </label>
+      <button id="programBtn" class="icon" title="Программа обучения">📚</button>
       <button id="themeBtn" class="icon" title="Тёмная или светлая тема">🌙</button>
       <button id="settingsBtn" class="icon" title="Настройки">⚙</button>
       <button id="startBtn" class="primary">Начать занятие</button>
@@ -67,6 +68,16 @@
         <button type="submit" id="settingsSave" class="primary">Сохранить</button>
       </div>
     </form>
+  </div>
+
+  <div id="program" class="overlay" hidden>
+    <div class="card program">
+      <h2>Программа</h2>
+      <p id="programSummary" class="program-summary"></p>
+      <p id="programHomework" class="program-homework" hidden></p>
+      <div id="programList" class="program-list"></div>
+      <div class="actions"><button type="button" id="programClose" class="primary">Закрыть</button></div>
+    </div>
   </div>
 
   <script type="module" src="app.js"></script>

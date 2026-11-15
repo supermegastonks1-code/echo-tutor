@@ -195,6 +195,32 @@ button.icon { font-size: 17px; padding: 6px 11px; }
 .style-card small { color: var(--muted); font-size: 12px; line-height: 1.35; }
 .style-card:has(input:checked) { border-color: var(--accent); background: var(--me); }
 
+.lesson { cursor: pointer; }
+.lesson:hover { color: var(--accent); }
+
+.program {
+  width: 100%;
+  max-width: 520px;
+  max-height: calc(100vh - 32px);
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.program h2 { margin: 0; }
+.program-summary { margin: 0; font-size: 14px; }
+.program-homework { margin: 0; padding: 8px 12px; border-radius: 10px; background: var(--me); font-size: 14px; }
+.program-list { overflow-y: auto; min-height: 0; flex: 1; }
+.program-list details { border-top: 1px solid var(--line); padding: 6px 0; }
+.program-list summary { cursor: pointer; font-weight: 600; padding: 4px 0; }
+.program-list ol { list-style: none; margin: 4px 0 6px; padding: 0; }
+.program-list li { margin: 0; padding: 3px 6px; border-radius: 8px; font-size: 14px; }
+.program-list li small { color: var(--muted); }
+.program-list .mark { display: inline-block; width: 18px; color: var(--muted); }
+.program-list li.now { background: var(--me); font-weight: 600; }
+.program-list li.now .mark { color: var(--accent); }
+.program-list li.done .mark { color: #22a35a; }
+.program-list li.skip { color: var(--muted); }
+
 .error { color: #d92d2d; font-size: 13px; }
 .actions { display: flex; justify-content: flex-end; gap: 8px; }
 

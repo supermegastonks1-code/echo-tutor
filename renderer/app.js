@@ -1,7 +1,8 @@
 import { Face } from './face.js';
 import { Mic, Player } from './audio.js';
 import { LiveSession, pickModel } from './live.js';
-import { STYLES, TOOLS, buildSystemPrompt, lessonsOf } from './prompt.js';
+import { STYLES, TOOLS, buildSystemPrompt, currentLesson, dueWords, REVIEW_STEPS } from './prompt.js';
+import { COURSE, LEVELS, lessonById, firstLessonOf } from './course.js';
 
 const $ = (id) => document.getElementById(id);
 const face = new Face($('face'));
@@ -32,11 +33,66 @@ function setStatus(text) { $('status').textContent = text; }
 function showLesson() {
   if (!progress.level) {
     $('lesson').textContent = 'сначала тест уровня';
-    return;
+  } else {
+    const l = currentLesson(progress);
+    $('lesson').textContent = `${l.level} · урок ${l.n}: ${l.title}`;
   }
-  const lessons = lessonsOf(progress);
-  const i = Math.min(progress.lessonIndex, lessons.length - 1);
-  $('lesson').textContent = `${progress.level} · урок ${i + 1}/${lessons.length}: ${lessons[i]}`;
+  if (!$('program').hidden) renderProgram();
+}
+
+// Старый прогресс (до курса) и новые поля приводим к одному виду.
+function normalizeProgress(p) {
+  p.done = Array.isArray(p.done) ? p.done : [];
+  p.focus = Array.isArray(p.focus) ? p.focus : [];
+  p.homework = p.homework || '';
+  if (p.level && !lessonById(p.lessonId)) {
+    // Раньше программа была списком строк — её ближайшие темы становятся слабыми местами.
+    const from = p.lessonIndex || 0;
+    if (!p.focus.length && Array.isArray(p.program)) p.focus = p.program.slice(from, from + 5);
+    p.lessonId = firstLessonOf(p.level).id;
+  }
+  delete p.program;
+  delete p.lessonIndex;
+  for (const w of p.words) {
+    w.box ??= 0;
+    w.due ??= 0;
+  }
+  return p;
+}
+
+// ---- Окно «Программа»: уровни, уроки, домашка, слова на повтор ----
+
+function renderProgram() {
+  const cur = progress.level ? currentLesson(progress) : null;
+  const curIdx = cur ? COURSE.indexOf(cur) : -1;
+  const due = dueWords(progress, 999).length;
+  const doneIds = new Set(progress.done.map(d => d.id));
+  const passed = COURSE.filter((l, i) => doneIds.has(l.id) || i < curIdx).length;
+
+  $('programSummary').innerHTML = cur
+    ? `<b>${cur.level} · ${LEVELS[cur.level]}</b> · пройдено ${passed} из ${COURSE.length} уроков<br>
+       Сейчас: <b>${escapeHtml(cur.title)}</b> — ${escapeHtml(cur.goal)}<br>
+       Слов в копилке: ${progress.words.length}, повторить сегодня: ${due}`
+    : 'Уровень ещё не проверен — начни занятие, и Echo проведёт короткий тест.';
+  $('programHomework').hidden = !progress.homework;
+  $('programHomework').innerHTML = progress.homework ? `<b>Домашка:</b> ${escapeHtml(progress.homework)}` : '';
+
+  $('programList').innerHTML = Object.keys(LEVELS).map(level => {
+    const items = COURSE.filter(l => l.level === level).map(l => {
+      const i = COURSE.indexOf(l);
+      const rec = progress.done.find(d => d.id === l.id);
+      const state = l === cur ? 'now' : rec ? 'done' : i < curIdx ? 'skip' : '';
+      const mark = { now: '▶', done: '✓', skip: '·' }[state] || '';
+      const score = rec?.score != null ? ` <small>${rec.score}/5</small>` : '';
+      return `<li class="${state}" title="${escapeHtml(l.goal)}"><span class="mark">${mark}</span>${l.n}. ${escapeHtml(l.title)}${score}</li>`;
+    }).join('');
+    const open = cur ? cur.level === level : level === 'A1';
+    return `<details ${open ? 'open' : ''}><summary>${level} — ${LEVELS[level]}</summary><ol>${items}</ol></details>`;
+  }).join('');
+}
+
+function escapeHtml(s) {
+  return String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 }
 
 function addMsg(role, text) {
@@ -85,7 +141,7 @@ function handleTool(name, args) {
     for (const w of args.new_words || []) {
       if (!w?.en) continue;
       const exists = progress.words.some(x => x.en.toLowerCase() === w.en.toLowerCase());
-      if (!exists) progress.words.push({ en: w.en, ru: w.ru || '' });
+      if (!exists) progress.words.push({ en: w.en, ru: w.ru || '', box: 0, due: progress.sessions + 1 });
     }
     addUnique(progress.mistakes, args.mistakes || []);
     addUnique(progress.notes, args.note ? [args.note] : []);
@@ -95,23 +151,59 @@ function handleTool(name, args) {
     return 'сохранено';
   }
   if (name === 'set_program') {
-    const lessons = (args.lessons || []).filter(Boolean).map(l => l.replace(/^урок\s*\d+\s*[:.)-]\s*/i, ''));
-    if (!args.level || !lessons.length) return 'нужны level и lessons';
-    progress.level = args.level;
+    const level = String(args.level || '').toUpperCase().match(/[ABC][12]/)?.[0];
+    if (!level) return 'нужен level: A1, A2, B1, B2 или C1';
+    const start = lessonById(String(args.start_lesson || '').toUpperCase().trim()) || firstLessonOf(level);
+    progress.level = start.level;
     progress.levelSummary = args.summary || '';
-    progress.program = lessons;
-    progress.lessonIndex = 0;
+    progress.focus = (args.focus || []).filter(Boolean).slice(0, 5);
+    progress.lessonId = start.id;
     save();
     showLesson();
-    addMsg('system', `Уровень: ${args.level}. Программа из ${lessons.length} уроков сохранена.`);
-    return `сохранено, начинай урок 1: ${lessons[0]}`;
+    addMsg('system', `Уровень: ${level}. Начинаем с урока «${start.title}».`);
+    return `сохранено, начинай урок ${start.id}: ${start.title} — ${start.goal}`;
   }
   if (name === 'lesson_done') {
-    const lessons = lessonsOf(progress);
-    progress.lessonIndex = Math.min(progress.lessonIndex + 1, lessons.length - 1);
+    const cur = currentLesson(progress);
+    const score = args.score != null && Number.isFinite(+args.score) ? Math.max(0, Math.min(5, Math.round(+args.score))) : null;
+    progress.done = progress.done.filter(d => d.id !== cur.id);
+    progress.done.push({ id: cur.id, score, at: new Date().toISOString().slice(0, 10) });
+    if (args.homework) progress.homework = String(args.homework).trim();
+    const next = COURSE[COURSE.indexOf(cur) + 1];
+    if (next) {
+      progress.lessonId = next.id;
+      progress.level = next.level;
+    }
     save();
     showLesson();
-    return `следующий урок: ${lessons[progress.lessonIndex]}`;
+    addMsg('system', `Урок «${cur.title}» сдан${score != null ? ` на ${score}/5` : ''}.${args.homework ? ' Домашка записана.' : ''}`);
+    return next ? `следующий урок ${next.id}: ${next.title} — ${next.goal}` : 'это был последний урок курса — поздравь ученика';
+  }
+  if (name === 'review_words') {
+    const find = (en) => progress.words.find(w => w.en.toLowerCase() === String(en).trim().toLowerCase());
+    for (const en of args.known || []) {
+      const w = find(en);
+      if (!w) continue;
+      w.box = Math.min((w.box ?? 0) + 1, REVIEW_STEPS.length - 1);
+      w.due = progress.sessions + REVIEW_STEPS[w.box];
+    }
+    for (const en of args.forgot || []) {
+      const w = find(en);
+      if (!w) continue;
+      w.box = 0;
+      w.due = progress.sessions + 1;
+    }
+    save();
+    if (!$('program').hidden) renderProgram();
+    return 'сохранено';
+  }
+  if (name === 'homework_checked') {
+    if (args.result) addUnique(progress.notes, [`Домашка (${new Date().toISOString().slice(0, 10)}): ${args.result}`]);
+    progress.homework = '';
+    progress.notes = progress.notes.slice(-50);
+    save();
+    if (!$('program').hidden) renderProgram();
+    return 'ок';
   }
   return 'неизвестная функция';
 }
@@ -287,12 +379,15 @@ $('themeBtn').onclick = async () => {
   applyTheme(next);
   config = await window.klyaks.saveConfig({ theme: next });
 };
+$('lesson').onclick = $('programBtn').onclick = () => { renderProgram(); $('program').hidden = false; };
+$('programClose').onclick = () => { $('program').hidden = true; };
+$('program').addEventListener('click', (e) => { if (e.target === $('program')) $('program').hidden = true; });
 $('keyLink').onclick = (e) => { e.preventDefault(); window.klyaks.openKeyPage(); };
 
 (async () => {
   config = await window.klyaks.getConfig();
   applyTheme(config.theme);
-  progress = await window.klyaks.getProgress();
+  progress = normalizeProgress(await window.klyaks.getProgress());
   for (const key of ['mistakes', 'notes']) {
     const clean = [];
     addUnique(clean, progress[key]);

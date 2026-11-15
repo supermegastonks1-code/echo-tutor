@@ -35,8 +35,10 @@ const DEFAULT_CONFIG = {
 const DEFAULT_PROGRESS = {
   level: '',
   levelSummary: '',
-  program: [],
-  lessonIndex: 0,
+  lessonId: '',
+  focus: [],
+  done: [],
+  homework: '',
   words: [],
   mistakes: [],
   notes: [],
