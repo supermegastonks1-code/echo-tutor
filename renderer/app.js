@@ -374,6 +374,15 @@ $('settingsForm').addEventListener('submit', async (e) => {
 });
 $('settingsCancel').onclick = () => { $('settings').hidden = true; };
 $('settingsBtn').onclick = openSettings;
+// Новая версия скачалась — показываем кнопку. Нажал — Echo перезапускается обновлённым.
+window.klyaks.onUpdateReady((version) => {
+  $('updateBtn').hidden = false;
+  $('updateBtn').title = `Вышла версия ${version} — нажми, чтобы перезапустить Echo с ней`;
+});
+$('updateBtn').onclick = () => {
+  if (session) return addMsg('system', 'Сначала закончи занятие — потом нажми «Обновить».');
+  window.klyaks.installUpdate();
+};
 $('themeBtn').onclick = async () => {
   const next = document.documentElement.dataset.theme === 'dark' ? 'light' : 'dark';
   applyTheme(next);

@@ -1,18 +1,55 @@
 {
   "name": "echo-tutor",
   "productName": "Echo",
-  "version": "1.2.2",
+  "version": "1.3.0",
   "description": "Echo — голосовой репетитор английского на Gemini Live",
   "main": "main.js",
   "scripts": {
     "start": "electron .",
-    "dist": "electron-packager . Echo --platform=win32 --arch=x64 --out=dist --overwrite --asar --icon=build/icon.ico \"--ignore=^/config\\.json$\" \"--ignore=^/data\" \"--ignore=^/dist\" \"--ignore=^/build/\" \"--ignore=^/docs\" \"--ignore=\\.lnk$\" \"--ignore=^/CLAUDE\" \"--ignore=^/\\.git\" \"--ignore=^/\\.claude\""
+    "dist": "electron-builder --win nsis --x64 --publish never"
   },
   "devDependencies": {
-    "@electron/packager": "^18.0.0",
-    "electron": "^38.0.0"
+    "electron": "^38.0.0",
+    "electron-builder": "^26.18.0"
   },
   "dependencies": {
+    "electron-updater": "^6.8.11",
     "three": "^0.180.0"
+  },
+  "author": "Echo",
+  "build": {
+    "appId": "com.echo.tutor",
+    "productName": "Echo",
+    "executableName": "Echo",
+    "directories": {
+      "output": "dist",
+      "buildResources": "build"
+    },
+    "files": [
+      "main.js",
+      "preload.js",
+      "package.json",
+      "renderer/**/*"
+    ],
+    "win": {
+      "target": "nsis",
+      "icon": "build/icon.ico",
+      "artifactName": "Echo-Setup-${version}.${ext}"
+    },
+    "nsis": {
+      "oneClick": true,
+      "perMachine": false,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "Echo",
+      "deleteAppDataOnUninstall": false
+    },
+    "publish": [
+      {
+        "provider": "github",
+        "owner": "supermegastonks1-code",
+        "repo": "echo-tutor"
+      }
+    ]
   }
 }

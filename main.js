@@ -102,8 +102,10 @@ process.on('exit', (code) => log(`процесс завершён, код ${code
 app.on('child-process-gone', (_e, d) => log(`упал служебный процесс ${d.type}: ${d.reason} (${d.exitCode})`));
 app.on('before-quit', () => log('выход из программы'));
 
+let mainWindow = null;
+
 function createWindow() {
-  const win = new BrowserWindow({
+  const win = mainWindow = new BrowserWindow({
     width: 900,
     height: 760,
     minWidth: 520,
@@ -128,6 +130,28 @@ app.whenReady().then(() => {
     cb(permission === 'media');
   });
   createWindow();
+  setupUpdates();
 });
+
+// Обновления: при запуске смотрим новый выпуск на GitHub, качаем в фоне,
+// потом показываем кнопку «Обновить». Если её не нажать — поставится при выходе.
+// Память ученика лежит в %APPDATA%/Echo и при обновлении не трогается.
+let updateReady = false;
+function setupUpdates() {
+  if (!app.isPackaged) return;
+  const { autoUpdater } = require('electron-updater');
+  autoUpdater.logger = { info: (m) => log(`обновление: ${m}`), warn: (m) => log(`обновление: ${m}`), error: (m) => log(`обновление, ошибка: ${m}`), debug: () => {} };
+  autoUpdater.autoDownload = true;
+  autoUpdater.autoInstallOnAppQuit = true;
+  autoUpdater.on('update-downloaded', (info) => {
+    updateReady = true;
+    mainWindow?.webContents.send('update:ready', info.version);
+  });
+  autoUpdater.on('error', (e) => log(`обновление не удалось: ${e?.message || e}`));
+  const check = () => autoUpdater.checkForUpdates().catch((e) => log(`проверка обновлений: ${e?.message || e}`));
+  check();
+  setInterval(check, 4 * 60 * 60 * 1000);
+  ipcMain.on('update:install', () => { if (updateReady) autoUpdater.quitAndInstall(true, true); });
+}
 
 app.on('window-all-closed', () => app.quit());
