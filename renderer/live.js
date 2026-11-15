@@ -82,9 +82,9 @@ export class LiveSession {
         // Без «раздумий» модель отвечает примерно вдвое быстрее (если модель это поддерживает).
         ...(this.noThinkingConfig ? {} : { thinkingConfig: { thinkingBudget: 0 } })
       },
-      // Быстрее понимать, что ученик договорил.
+      // Ученик говорит на чужом языке и делает паузы, подбирая слова, — не обрываем его на полуслове.
       realtimeInputConfig: {
-        automaticActivityDetection: { endOfSpeechSensitivity: 'END_SENSITIVITY_HIGH', silenceDurationMs: 500 }
+        automaticActivityDetection: { endOfSpeechSensitivity: 'END_SENSITIVITY_LOW', silenceDurationMs: 1100 }
       },
       systemInstruction: { parts: [{ text: this.systemPrompt }] },
       tools: this.tools,
