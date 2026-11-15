@@ -125,7 +125,18 @@ function createWindow() {
   win.loadFile(path.join(ROOT, 'renderer', 'index.html'));
 }
 
+// Только одно окно Echo: второй запуск просто показывает уже открытое.
+const firstInstance = app.requestSingleInstanceLock();
+if (!firstInstance) app.quit();
+app.on('second-instance', () => {
+  if (!mainWindow) return;
+  if (mainWindow.isMinimized()) mainWindow.restore();
+  mainWindow.show();
+  mainWindow.focus();
+});
+
 app.whenReady().then(() => {
+  if (!firstInstance) return;
   session.defaultSession.setPermissionRequestHandler((_wc, permission, cb) => {
     cb(permission === 'media');
   });
