@@ -20,6 +20,7 @@ applyTheme('');
 let config, progress;
 let session = null, mic = null, player = null;
 let micOn = true;
+let textTalkUntil = 0; // пока Echo «пишет» без голоса — шевелит ртом
 let lastVoiceAt = 0;
 let greeted = false;
 
@@ -219,6 +220,9 @@ function loop() {
   if (player?.playing) {
     face.set({ activity: 'speaking' });
     face.speak(player.level());
+  } else if (performance.now() < textTalkUntil) {
+    face.set({ activity: 'speaking' });
+    face.speak(0.25 + 0.2 * Math.abs(Math.sin(performance.now() / 110)));
   } else if (session && micOn && performance.now() - lastVoiceAt < 700) {
     face.set({ activity: 'listening' });
   } else {
@@ -256,7 +260,7 @@ async function start() {
         onStatus: (state, info) => {
           window.klyaks.log(`статус: ${state} ${info ?? ''}`);
           if (state === 'ready') {
-            setStatus(micOn ? 'Говори или пиши' : 'Микрофон выключен — пиши');
+            setStatus(micOn ? 'Говори или пиши' : 'Микрофон выключен — пиши, Echo отвечает текстом');
             // Новая сессия без продолжения: первый раз здороваемся, потом просто продолжаем.
             if (!info) session.sendText(greeted ? '[связь восстановлена — продолжай с того места, где остановились, без приветствия]' : '[начало занятия]');
             greeted = true;
@@ -272,9 +276,10 @@ async function start() {
           }
         },
         onLog: (line) => window.klyaks.log(line),
-        onAudio: (b64) => player.play(b64),
+        // Микрофон выключен — общаемся текстом: голос Echo не включаем, его слова и так идут в чат.
+        onAudio: (b64) => { if (micOn) player.play(b64); },
         onInterrupted: () => player.stop(),
-        onTutorText: (t) => { current.me = null; appendTo('tutor', t); turnText.tutor += t; },
+        onTutorText: (t) => { if (!micOn) textTalkUntil = performance.now() + 600; current.me = null; appendTo('tutor', t); turnText.tutor += t; },
         onUserText: (t) => { appendTo('me', t); turnText.me += t; },
         onTurnComplete: () => { current = { tutor: null, me: null }; saveTurn(); },
         onTool: handleTool
@@ -328,7 +333,8 @@ $('textInput').addEventListener('keydown', (e) => { if (e.key === 'Enter') sendT
 $('micBtn').onclick = () => {
   micOn = !micOn;
   $('micBtn').classList.toggle('off', !micOn);
-  setStatus(micOn ? 'Говори или пиши' : 'Микрофон выключен — пиши');
+  if (!micOn) player?.stop();
+  setStatus(micOn ? 'Говори или пиши' : 'Микрофон выключен — пиши, Echo отвечает текстом');
 };
 
 // ---- Настройки: ключ, стиль общения, голос ----
