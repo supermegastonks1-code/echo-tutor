@@ -86,7 +86,11 @@ export class LiveSession {
       realtimeInputConfig: {
         automaticActivityDetection: { endOfSpeechSensitivity: 'END_SENSITIVITY_LOW', silenceDurationMs: 1100 }
       },
-      systemInstruction: { parts: [{ text: this.systemPrompt }] },
+      // systemPrompt может быть функцией: при новой сессии посреди занятия (ключ продолжения сброшен)
+      // её собирают заново — с тем, что уже было на этом занятии.
+      systemInstruction: { parts: [{ text: typeof this.systemPrompt === 'function'
+        ? this.systemPrompt({ reconnect: this.everReady && !this.resumeHandle })
+        : this.systemPrompt }] },
       tools: this.tools,
       inputAudioTranscription: {},
       outputAudioTranscription: {},
@@ -101,6 +105,7 @@ export class LiveSession {
     if (msg.setupComplete) {
       const resumed = !!this.resumeHandle;
       this.ready = true;
+      this.everReady = true;
       h.onStatus?.('ready', resumed);
       return;
     }

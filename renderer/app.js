@@ -1,7 +1,7 @@
 import { Face } from './face.js';
 import { Mic, Player } from './audio.js';
 import { LiveSession, pickModel } from './live.js';
-import { STYLES, TOOLS, buildSystemPrompt, currentLesson, dueWords, REVIEW_STEPS } from './prompt.js';
+import { STYLES, TOOLS, buildSystemPrompt, reconnectBlock, STEP_NAMES, currentLesson, dueWords, REVIEW_STEPS } from './prompt.js';
 import { COURSE, LEVELS, lessonById, firstLessonOf } from './course.js';
 import { digestTurns } from './memory.js';
 
@@ -138,6 +138,7 @@ function saveTurn() {
 
 // ---- Страховка памяти: после занятия и каждые ~12 реплик перечитываем разговор ----
 let sessionTurns = [];
+let sessionEvents = []; // что уже сделано на этом занятии — для переподключения
 let digestedUpTo = 0;
 let digesting = null;
 
@@ -188,7 +189,15 @@ function handleTool(name, args) {
     face.set({ mood: args.mood });
     return 'ok';
   }
+  if (name === 'lesson_step') {
+    const step = Math.max(1, Math.min(6, Math.round(+args.step || 1)));
+    progress.lessonStep = { lessonId: currentLesson(progress).id, step };
+    sessionEvents.push(`начат шаг ${step} (${STEP_NAMES[step]})`);
+    save();
+    return 'ок';
+  }
   if (name === 'remember') {
+    if (args.new_words?.length) sessionEvents.push(`даны слова: ${args.new_words.map(w => w.en).join(', ')}`);
     addMemory({ new_words: args.new_words || [], mistakes: args.mistakes || [], notes: args.note ? [args.note] : [] });
     save();
     return 'сохранено';
@@ -204,6 +213,7 @@ function handleTool(name, args) {
     save();
     showLesson();
     addMsg('system', `Уровень: ${level}. Начинаем с урока «${start.title}».`);
+    sessionEvents.push(`тест уровня пройден: ${level}, начали урок ${start.id}`);
     return `сохранено, начинай урок ${start.id}: ${start.title} — ${start.goal}`;
   }
   if (name === 'lesson_done') {
@@ -217,12 +227,15 @@ function handleTool(name, args) {
       progress.lessonId = next.id;
       progress.level = next.level;
     }
+    progress.lessonStep = null;
+    sessionEvents.push(`урок ${cur.id} сдан${score != null ? ` на ${score}/5` : ''}${next ? `, дальше урок ${next.id} ${next.title}` : ''}`);
     save();
     showLesson();
     addMsg('system', `Урок «${cur.title}» сдан${score != null ? ` на ${score}/5` : ''}.${args.homework ? ' Домашка записана.' : ''}`);
     return next ? `следующий урок ${next.id}: ${next.title} — ${next.goal}` : 'это был последний урок курса — поздравь ученика';
   }
   if (name === 'review_words') {
+    sessionEvents.push(`слова повторены (вспомнил: ${(args.known || []).join(', ') || '—'}; забыл: ${(args.forgot || []).join(', ') || '—'})`);
     const find = (en) => progress.words.find(w => w.en.toLowerCase() === String(en).trim().toLowerCase());
     for (const en of args.known || []) {
       const w = find(en);
@@ -241,6 +254,7 @@ function handleTool(name, args) {
     return 'сохранено';
   }
   if (name === 'homework_checked') {
+    sessionEvents.push(`домашка проверена${args.result ? `: ${args.result}` : ''}`);
     if (args.result) addUnique(progress.notes, [`Домашка (${new Date().toISOString().slice(0, 10)}): ${args.result}`]);
     progress.homework = '';
     progress.notes = progress.notes.slice(-50);
@@ -293,13 +307,23 @@ async function start() {
     progress.sessions += 1;
     save();
     sessionTurns = [];
+    sessionEvents = [];
     digestedUpTo = 0;
 
     session = new LiveSession({
       apiKey: config.apiKey,
       model,
       voice: config.voice || 'Puck',
-      systemPrompt: buildSystemPrompt(progress, config.style),
+      // При новой сессии посреди занятия промпт собирается заново — со всем, что уже было.
+      systemPrompt: ({ reconnect }) => {
+        const base = buildSystemPrompt(progress, config.style);
+        if (!reconnect) return base;
+        const turns = [...sessionTurns];
+        if (turnText.me.trim()) turns.push({ role: 'me', text: turnText.me.trim() });
+        if (turnText.tutor.trim()) turns.push({ role: 'tutor', text: turnText.tutor.trim() });
+        window.klyaks.log(`новая сессия посреди занятия: передаю ${turns.length} реплик и ${sessionEvents.length} событий`);
+        return base + reconnectBlock(turns, sessionEvents, progress);
+      },
       tools: TOOLS,
       handlers: {
         onStatus: (state, info) => {
