@@ -3,6 +3,7 @@ import { Mic, Player } from './audio.js';
 import { LiveSession, pickModel } from './live.js';
 import { STYLES, TOOLS, buildSystemPrompt, currentLesson, dueWords, REVIEW_STEPS } from './prompt.js';
 import { COURSE, LEVELS, lessonById, firstLessonOf } from './course.js';
+import { digestTurns } from './memory.js';
 
 const $ = (id) => document.getElementById(id);
 const face = new Face($('face'));
@@ -128,25 +129,67 @@ function saveTurn() {
   if (turnText.me.trim()) log.push({ role: 'me', text: clip(turnText.me) });
   if (turnText.tutor.trim()) log.push({ role: 'tutor', text: clip(turnText.tutor) });
   progress.lastSession = log.slice(-24);
+  if (turnText.me.trim()) sessionTurns.push({ role: 'me', text: turnText.me.trim().slice(0, 800) });
+  if (turnText.tutor.trim()) sessionTurns.push({ role: 'tutor', text: turnText.tutor.trim().slice(0, 800) });
   turnText = { me: '', tutor: '' };
   save();
+  if (sessionTurns.length - digestedUpTo >= 12) digestMemory();
+}
+
+// ---- Страховка памяти: после занятия и каждые ~12 реплик перечитываем разговор ----
+let sessionTurns = [];
+let digestedUpTo = 0;
+let digesting = null;
+
+function addMemory({ new_words = [], mistakes = [], notes = [] }) {
+  let added = 0;
+  for (const w of new_words) {
+    if (!w?.en) continue;
+    const exists = progress.words.some(x => x.en.toLowerCase() === String(w.en).trim().toLowerCase());
+    if (!exists) { progress.words.push({ en: String(w.en).trim(), ru: w.ru || '', box: 0, due: progress.sessions + 1 }); added++; }
+  }
+  const before = progress.mistakes.length + progress.notes.length;
+  addUnique(progress.mistakes, mistakes);
+  addUnique(progress.notes, notes);
+  added += progress.mistakes.length + progress.notes.length - before;
+  progress.mistakes = progress.mistakes.slice(-100);
+  progress.notes = progress.notes.slice(-50);
+  return added;
+}
+
+function digestMemory() {
+  if (digesting) return digesting;
+  const from = digestedUpTo, to = sessionTurns.length;
+  if (to - from < 2) return Promise.resolve();
+  // Берём немного контекста перед новым куском, чтобы было понятно, о чём речь.
+  const turnsRef = sessionTurns;
+  const chunk = sessionTurns.slice(Math.max(0, from - 4), to);
+  const known = { words: progress.words.map(w => w.en).slice(-200), notes: progress.notes };
+  // Пока ответа нет, кусок лежит в progress — если окно закроют, дочитаем при следующем запуске.
+  progress.pendingTurns = chunk;
+  save();
+  digesting = digestTurns(config.apiKey, chunk, known)
+    .then((res) => {
+      if (sessionTurns === turnsRef) digestedUpTo = to;
+      delete progress.pendingTurns;
+      const added = addMemory(res);
+      save();
+      if (!$('program').hidden) renderProgram();
+      window.klyaks.log(`память: +${added} (слов ${res.new_words.length}, ошибок ${res.mistakes.length}, фактов ${res.notes.length}) через ${res.model}`);
+    })
+    .catch((e) => window.klyaks.log(`память: не получилось — ${e.message}`))
+    .finally(() => { digesting = null; });
+  return digesting;
 }
 
 function handleTool(name, args) {
+  if (name !== 'set_mood') window.klyaks.log(`инструмент ${name}: ${JSON.stringify(args).slice(0, 200)}`);
   if (name === 'set_mood') {
     face.set({ mood: args.mood });
     return 'ok';
   }
   if (name === 'remember') {
-    for (const w of args.new_words || []) {
-      if (!w?.en) continue;
-      const exists = progress.words.some(x => x.en.toLowerCase() === w.en.toLowerCase());
-      if (!exists) progress.words.push({ en: w.en, ru: w.ru || '', box: 0, due: progress.sessions + 1 });
-    }
-    addUnique(progress.mistakes, args.mistakes || []);
-    addUnique(progress.notes, args.note ? [args.note] : []);
-    progress.mistakes = progress.mistakes.slice(-100);
-    progress.notes = progress.notes.slice(-50);
+    addMemory({ new_words: args.new_words || [], mistakes: args.mistakes || [], notes: args.note ? [args.note] : [] });
     save();
     return 'сохранено';
   }
@@ -249,6 +292,8 @@ async function start() {
     window.klyaks.log(`--- занятие, модель ${model}`);
     progress.sessions += 1;
     save();
+    sessionTurns = [];
+    digestedUpTo = 0;
 
     session = new LiveSession({
       apiKey: config.apiKey,
@@ -307,6 +352,8 @@ async function start() {
 }
 
 function stop() {
+  if (turnText.me.trim() || turnText.tutor.trim()) saveTurn();
+  digestMemory();
   session?.close();
   mic?.stop();
   player?.stop();
@@ -384,6 +431,16 @@ window.klyaks.onUpdateReady((version) => {
   $('updateBtn').hidden = false;
   $('updateBtn').title = `Вышла версия ${version} — нажми, чтобы перезапустить Echo с ней`;
 });
+// Закрывают окно — дописываем память занятия и только потом выходим.
+window.klyaks.onClosing(async () => {
+  try {
+    if (session) stop();
+    // Ждём память не дольше 8 секунд: недочитанное останется в pendingTurns до следующего запуска.
+    await Promise.race([digestMemory(), new Promise(r => setTimeout(r, 8000))]);
+  } finally {
+    window.klyaks.closedOk();
+  }
+});
 $('updateBtn').onclick = () => {
   if (session) return addMsg('system', 'Сначала закончи занятие — потом нажми «Обновить».');
   window.klyaks.installUpdate();
@@ -420,6 +477,11 @@ $('keyLink').onclick = (e) => { e.preventDefault(); window.klyaks.openKeyPage();
   config = await window.klyaks.getConfig();
   applyTheme(config.theme);
   progress = normalizeProgress(await window.klyaks.getProgress());
+  if (Array.isArray(progress.pendingTurns) && progress.pendingTurns.length && hasKey()) {
+    sessionTurns = progress.pendingTurns;
+    digestedUpTo = 0;
+    digestMemory();
+  }
   for (const key of ['mistakes', 'notes']) {
     const clean = [];
     addUnique(clean, progress[key]);

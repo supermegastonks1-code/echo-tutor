@@ -8,5 +8,7 @@ contextBridge.exposeInMainWorld('klyaks', {
   saveProgress: (data) => ipcRenderer.invoke('progress:save', data),
   log: (line) => ipcRenderer.send('log', line),
   onUpdateReady: (cb) => ipcRenderer.on('update:ready', (_e, version) => cb(version)),
-  installUpdate: () => ipcRenderer.send('update:install')
+  installUpdate: () => ipcRenderer.send('update:install'),
+  onClosing: (cb) => ipcRenderer.on('app:closing', () => cb()),
+  closedOk: () => ipcRenderer.send('app:closed-ok')
 });

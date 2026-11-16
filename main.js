@@ -121,7 +121,15 @@ function createWindow() {
   });
   win.webContents.on('render-process-gone', (_e, d) => log(`ОКНО УПАЛО: ${d.reason} (${d.exitCode})`));
   win.webContents.on('unresponsive', () => log('Окно зависло'));
-  win.on('close', () => log('окно закрывается'));
+  // Перед закрытием даём окну пару секунд дописать память занятия.
+  let closingReady = false;
+  win.on('close', (e) => {
+    if (closingReady) { log('окно закрывается'); return; }
+    e.preventDefault();
+    win.webContents.send('app:closing');
+    setTimeout(() => { closingReady = true; if (!win.isDestroyed()) win.close(); }, 10000);
+  });
+  ipcMain.once('app:closed-ok', () => { closingReady = true; if (!win.isDestroyed()) win.close(); });
   win.loadFile(path.join(ROOT, 'renderer', 'index.html'));
 }
 
